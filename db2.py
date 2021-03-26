@@ -6,6 +6,16 @@ class Column:
 		self.type = column_type
 		self.nullable = nullable
 
+	def check_value_type(self, value):
+		'Raise a TypeError exception if value has the wrong type'
+		if type(value) == type(None):
+			if self.nullable:
+				return
+			raise TypeError('Cannot use NULL value for column %s' % self.name)
+		if type(value) != self.type:
+			raise TypeError('Value %r of type %r is wrong type for column %s' %
+				(value, type(value), self.type))
+
 class Relation:
 	def __init__(self, columns, name=None):
 		self.name = name
@@ -19,22 +29,27 @@ class Relation:
 		raise NotImplemented
 
 	# TODO: materialize - have base relation provide support for free?
+	# or have relations automatically swapped out for material relations after
+	# first iteration
 
-class BaseRelation(Relation):
+class MaterialRelation(Relation):
 	'''
-	A base relation stores a list of tuples. All other relations are derived
+	A material relation stores a list of tuples. All other relations are derived
 	from other relations.
 	'''
-	def __init__(self, columns, name):
+	def __init__(self, columns, name=None):
 		super().__init__(columns, name)
 		self.rows = []
 
-	def insert_row(self, values):
-		# TODO: validate types
-		pass
+	def insert(self, values):
+		if len(values) != len(self.columns):
+			raise TypeError("Wrong number of columns")
+		for value, column in zip(values, self.columns):
+			column.check_value_type(value)
+		self.rows.append(tuple(values))
 
 	def __iter__(self):
-		return self.row.__iter__()
+		return self.rows.__iter__()
 
 class Expression:
 	def value_type(self):
@@ -42,6 +57,7 @@ class Expression:
 		raise NotImplemented
 
 # TODO:
+# name normalization
 # Expression:
 # eval(tuple) -> <result type>
 # - optional name
