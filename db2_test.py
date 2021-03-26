@@ -81,6 +81,21 @@ class TestMaterialRelation(unittest.TestCase):
 		relation2.set_name('Users')
 		self.assertEqual(relation2.name, 'Users')
 
+class ValueExpression(Expression):
+	def __init__(self, value, expression_type, nullable=True):
+		self.value = value
+		self.type = expression_type
+		self.is_nullable = nullable
+
+	def value_type(self):
+		return self.type
+
+	def nullable(self):
+		return self.is_nullable
+
+	def evaluate(self, row):
+		return self.value
+
 class TestConstantExpression(unittest.TestCase):
 	def test_should_have_correct_attributes_for_value(self):
 		expr = Constant(123)
@@ -231,10 +246,8 @@ class TestComparison(unittest.TestCase):
 		]
 		for op, lhs, rhs, operand_type in cases:
 			expr = Comparision(op,
-					Attribute(
-						Column('A', operand_type, nullable=True, index=0)),
-					Attribute(
-						Column('B', operand_type, nullable=True, index=1)))
+					ValueExpression(lhs, operand_type, nullable=True),
+					ValueExpression(rhs, operand_type, nullable=True))
 			self.assertTrue(expr.nullable())
 			description = '%r %s %r %r' % (lhs, op, rhs, operand_type)
 			result = expr.evaluate([lhs, rhs])
@@ -249,24 +262,138 @@ class TestComparison(unittest.TestCase):
 		]
 		for lhs_null, rhs_null, result_null in cases:
 			expr = Comparision('=',
-					Attribute(
-						Column('A', int, nullable=lhs_null, index=0)),
-					Attribute(
-						Column('B', int, nullable=rhs_null, index=1)))
+					ValueExpression(0, int, nullable=lhs_null),
+					ValueExpression(0, int, nullable=rhs_null))
 			self.assertEqual(expr.nullable(), result_null)
 
 	def test_should_return_error_if_operands_have_different_types(self):
 		with self.assertRaisesRegex(TypeError, 'same type'):
 			Comparision('=',
-				Attribute(
-					Column('A', bool, nullable=True, index=0)),
-				Attribute(
-					Column('B', int, nullable=True, index=1)))
+				ValueExpression(None, bool),
+				ValueExpression(None, int))
+
+class TestCastExpression(unittest.TestCase):
+	def test_should_cast_bool_to_bool(self):
+		for b in (False, True, None):
+			expr = Cast(ValueExpression(b, bool, nullable=True), bool)
+			self.assertEqual(expr.evaluate([]), b)
+
+	def test_should_cast_integer_to_bool(self):
+		cases = [
+			(0, False),
+			(1, True),
+			(-123, True),
+			(123, True),
+			(None, None),
+		]
+		for i, b in cases:
+			expr = Cast(ValueExpression(i, int, nullable=True), bool)
+			self.assertEqual(expr.evaluate([]), b)
+
+	def test_should_return_error_casting_float_to_bool(self):
+		for f in (0.0, 1.0, -123.123, 3.14, None):
+			with self.assertRaisesRegex(TypeError, 'FLOAT'):
+				Cast(ValueExpression(f, float, nullable=True), bool)
+
+	def test_should_cast_valid_string_to_bool(self):
+		cases = [
+			('false', False),
+			('FALSE', False),
+			('0', False),
+			('true', True),
+			('True', True),
+			('1', True),
+			(None, None)
+		]
+		for s, b in cases:
+			expr = Cast(ValueExpression(s, str, nullable=True), bool)
+			self.assertEqual(expr.evaluate([]), b)
+
+	def test_should_return_error_casting_invalid_string_to_bool(self):
+		for s in ('asf', '123', '1.0', 'unknown', 'null', ''):
+			expr = Cast(ValueExpression(s, str, nullable=True), bool)
+			with self.assertRaisesRegex(TypeError, 'invalid boolean'):
+				expr.evaluate([])
+
+	def test_should_cast_to_integer(self):
+		cases = [
+			(bool, False, 0),
+			(bool, True, 1),
+			(bool, None, None),
+			(int, 123, 123),
+			(int, None, None),
+			(float, 123.0, 123),
+			(float, 123.45, 123),
+			(float, 0.45, 0),
+			(float, -0.45, 0),
+			(float, -123.45, -123),
+			(float, None, None),
+			(str, '-123', -123),
+			(str, '123', 123),
+			(str, '0', 0),
+			(str, None, None),
+		]
+		for src_type, value, expected in cases:
+			expr = Cast(ValueExpression(value, src_type, nullable=True), int)
+			self.assertEqual(expr.evaluate([]), expected)
+
+	def test_should_return_error_casting_invalid_string_to_integer(self):
+		for s in ('asf', '3.14', '0x123', 'unknown', 'null', ''):
+			expr = Cast(ValueExpression(s, str, nullable=True), int)
+			with self.assertRaisesRegex(TypeError, 'invalid integer'):
+				expr.evaluate([])
+
+	def test_should_return_error_casting_bool_to_float(self):
+		for b in (False, True, None):
+			with self.assertRaisesRegex(TypeError, 'Cannot cast'):
+				Cast(ValueExpression(b, bool, nullable=True), float)
+
+	def test_should_cast_to_float(self):
+		cases = [
+			(int, 123, 123.0),
+			(int, None, None),
+			(float, 123.0, 123.0),
+			(float, 123.45, 123.45),
+			(float, None, None),
+			(str, '-123', -123),
+			(str, '123', 123),
+			(str, '0', 0),
+			(str, '-123.45', -123.45),
+			(str, None, None),
+		]
+		for src_type, value, expected in cases:
+			expr = Cast(ValueExpression(value, src_type, nullable=True), float)
+			self.assertEqual(expr.evaluate([]), expected)
+
+	def test_should_return_error_casting_invalid_string_to_float(self):
+		for s in ('asf', '0x123', 'unknown', 'null', ''):
+			expr = Cast(ValueExpression(s, str, nullable=True), float)
+			with self.assertRaisesRegex(TypeError, 'invalid float'):
+				expr.evaluate([])
+
+	def test_should_cast_to_str(self):
+		cases = [
+			(bool, False, 'false'),
+			(bool, True, 'true'),
+			(bool, None, None),
+			(int, 123, '123'),
+			(int, -123, '-123'),
+			(int, None, None),
+			(float, 123.0, '123.0'),
+			(float, 123.45, '123.45'),
+			(float, None, None),
+			(str, '', ''),
+			(str, 'abc', 'abc'),
+			(str, None, None),
+		]
+		for src_type, value, expected in cases:
+			expr = Cast(ValueExpression(value, src_type, nullable=True), str)
+			self.assertEqual(expr.evaluate([]), expected)
 
 # TODO:
 # attributes - value type, nullability
 # different types - throw error for now
-# cast bool to int to float
+# implicit cast bool to int to float
 # comparison - bool -> int -> float -> string
 # nullability - short circuiting
 

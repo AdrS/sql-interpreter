@@ -105,6 +105,76 @@ class Attribute(Expression):
 		self.column.check_value_type(value) # remove later
 		return value
 
+def str_to_bool(s):
+	if s == None:
+		return None
+	s = s.lower()
+	if s == 'true' or s == '1':
+		return True
+	if s == 'false' or s == '0':
+		return False
+	raise TypeError('String %r is an invalid boolean' % s)
+
+def str_to_int(s):
+	if s == None:
+		return None
+	if s.startswith('-') and s[1:].isdigit() or s.isdigit():
+		return int(s)
+	raise TypeError('String %r is an invalid integer' % s)
+
+def str_to_float(s):
+	if s == None:
+		return None
+	try:
+		return float(s)
+	except:
+		raise TypeError('String %r is an invalid float' % s)
+
+class Cast(Expression):
+	conversion_functions = {
+		bool: {
+			bool: lambda x: x,
+			int: lambda x: int(x) if x != None else None,
+			float: TypeError('Cannot cast BOOLEAN to FLOAT'),
+			str: lambda x: {None:None, True:'true', False:'false'}[x]
+		},
+		int: {
+			bool: lambda x: x != 0 if x != None else None,
+			int: lambda x: x,
+			float: lambda x: float(x) if x != None else None,
+			str: lambda x: str(x) if x != None else None,
+		},
+		float: {
+			bool: TypeError('Cannot cast FLOAT to BOOLEAN'),
+			int: lambda x: int(x) if x != None else None,
+			float: lambda x: x,
+			str: lambda x: str(x) if x != None else None,
+		},
+		str: {
+			bool: str_to_bool,
+			int: str_to_int,
+			float: str_to_float,
+			str: lambda x: x,
+		},
+	}
+	def __init__(self, expression, target_type):
+		self.op = (
+			Cast.conversion_functions[expression.value_type()][target_type])
+		if isinstance(self.op, TypeError):
+			raise self.op
+		self.expression = expression
+
+	def value_type(self):
+		return target_type
+
+	def nullable(self):
+		return self.expression.nullable()
+
+	def evaluate(self, row):
+		if row == None:
+			return None
+		return self.op(self.expression.evaluate(row))
+
 # class BinaryOperation(Expression):
 # 	def __init__(self, lhs, 
 
