@@ -1,10 +1,11 @@
 # types: INTEGER, FLOAT, STRING, BOOLEAN
 
 class Column:
-	def __init__(self, name, column_type, nullable=True):
+	def __init__(self, name, column_type, nullable=True, index=None):
 		self.name = name
 		self.type = column_type
 		self.nullable = nullable
+		self.index = index
 
 	def check_value_type(self, value):
 		'Raise a TypeError exception if value has the wrong type'
@@ -16,10 +17,22 @@ class Column:
 			raise TypeError('Value %r of type %r is wrong type for column %s' %
 				(value, type(value), self.type))
 
+	def transform(self, new_name=None, new_column_type=None,
+			new_nullability=None, new_index=None):
+		'''
+		Returns a new column identical to the original except for the specified
+		fields
+		'''
+		return Column(new_name or self.name,
+				new_column_type or self.type,
+				new_nullability if new_nullability != None else self.nullable,
+				new_index if new_index != None else self.index)
+
 class Relation:
 	def __init__(self, columns, name=None):
 		self.name = name
-		self.columns = columns
+		self.columns = [
+			column.transform(new_index=i) for i, column in enumerate(columns)]
 
 	def set_name(self, name):
 		self.name = name
@@ -53,14 +66,99 @@ class MaterialRelation(Relation):
 
 class Expression:
 	def value_type(self):
-		'''Returns the type the expression evaluates to'''
+		'Returns the type the expression evaluates to'
 		raise NotImplemented
 
+	def nullable(self):
+		'Returns true if the expression can evaluate to a null value'
+		raise NotImplemented
+
+	def evaluate(self, row):
+		'Returns the value of the expression for the attribute values of a row'
+		raise NotImplemented
+
+class Constant(Expression):
+	def __init__(self, value):
+		self.value = value
+
+	def value_type(self):
+		return type(self.value)
+
+	def nullable(self):
+		return self.value == None
+
+	def evaluate(self, row):
+		return self.value
+
+class Attribute(Expression):
+	def __init__(self, column):
+		self.column = column
+
+	def value_type(self):
+		return self.column.type
+
+	def nullable(self):
+		return self.column.nullable
+
+	def evaluate(self, row):
+		value = row[self.column.index]
+		self.column.check_value_type(value) # remove later
+		return value
+
+# class BinaryOperation(Expression):
+# 	def __init__(self, lhs, 
+
+class Comparision(Expression):
+	operators = {
+		'<': lambda a, b: a < b,
+		'<=': lambda a, b: a <= b,
+		'=': lambda a, b: a == b,
+		'>=': lambda a, b: a >= b,
+		'>': lambda a, b: a > b,
+		'<>': lambda a, b: a != b,
+	}
+	def __init__(self, op, lhs, rhs):
+		if lhs.value_type() != rhs.value_type():
+			raise TypeError('Operands must have the same type')
+		self.lhs = lhs
+		self.rhs = rhs
+		self.op = Comparision.operators[op]
+		# TODO: type checking and null handling
+
+	def value_type(self):
+		return bool
+
+	def nullable(self):
+		return self.lhs.nullable() or self.rhs.nullable()
+
+	def evaluate(self, row):
+		lhs = self.lhs.evaluate(row)
+		if lhs == None:
+			return None
+		rhs = self.rhs.evaluate(row)
+		if rhs == None:
+			return None
+		return self.op(lhs, rhs)
+
+# Have select statement expressions are predicates
+# class Predicate(Expression):
+# 	def __init__(self, expression):
+# 		if expression.value_type() != bool:
+# 			raise TypeError(
+# 				'Predicates must be expressions evaluating to boolean values')
+# 		self = expression # TODO: does this work?
+
 # TODO:
-# name normalization
+# - have type and named type classes
+# - name normalization
+#
 # Expression:
-# eval(tuple) -> <result type>
-# - optional name
+# - unary: minus, logical not, NULL, NOT NULL
+# - type cast
+# - arithmetic: +, -, *, /, mod
+# - comparison: <, <=, ==, <>, >=, >
+# - logical: OR, AND
+# - string: || (concatenation), LIKE (regex match), substring, case transforms
 #
 # - NULL in arithmetic
 # - x + NULL = NULL
