@@ -184,6 +184,15 @@ class BinaryOperation(Expression):
 	def nullable(self):
 		return self.lhs.nullable() or self.rhs.nullable()
 
+	def evaluate(self, row):
+		lhs = self.lhs.evaluate(row)
+		if lhs == None:
+			return None
+		rhs = self.rhs.evaluate(row)
+		if rhs == None:
+			return None
+		return self.op(lhs, rhs)
+
 class And(BinaryOperation):
 	def __init__(self, lhs, rhs):
 		super().__init__(lhs, rhs)
@@ -235,20 +244,37 @@ class Comparison(BinaryOperation):
 		super().__init__(lhs, rhs)
 		if lhs.value_type() != rhs.value_type():
 			raise TypeError('Operands must have the same type')
+		# TODO: compare int and float
 		self.op = Comparison.operators[op]
-		# TODO: type checking and null handling
 
 	def value_type(self):
 		return bool
 
-	def evaluate(self, row):
-		lhs = self.lhs.evaluate(row)
-		if lhs == None:
-			return None
-		rhs = self.rhs.evaluate(row)
-		if rhs == None:
-			return None
-		return self.op(lhs, rhs)
+def is_numeric(value_type):
+	return value_type == int or value_type == float
+
+class Arithmetic(BinaryOperation):
+	operators = {
+		'*': lambda a, b: a * b,
+		'/': lambda a, b: a / b,
+		'//': lambda a, b: a // b,
+		'%': lambda a, b: a % b,
+		'+': lambda a, b: a + b,
+		'-': lambda a, b: a - b,
+	}
+	def __init__(self, op, lhs, rhs):
+		super().__init__(lhs, rhs)
+
+		if not (is_numeric(lhs.value_type()) and is_numeric(rhs.value_type())):
+			raise TypeError('Operands to %r must be numeric')
+		self.type = float if (lhs.value_type() == float or
+								rhs.value_type() == float) else int
+		if op == '/' and self.type == int:
+			op = '//'
+		self.op = Arithmetic.operators[op]
+
+	def value_type(self):
+		return self.type
 
 # Have select statement expressions are predicates
 # class Predicate(Expression):
@@ -264,16 +290,8 @@ class Comparison(BinaryOperation):
 #
 # Expression:
 # - unary: minus, logical not, NULL, NOT NULL
-# - type cast
 # - arithmetic: +, -, *, /, mod
-# - comparison: <, <=, ==, <>, >=, >
-# - logical: OR, AND
 # - string: || (concatenation), LIKE (regex match), substring, case transforms
-#
-# - NULL in arithmetic
-# - x + NULL = NULL
-# - TRUE AND NULL = NULL
-# - TRUE OR NULL = TRUE
 #
 # Predicate
 # eval(tuple) -> bool

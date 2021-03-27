@@ -446,6 +446,56 @@ class TestOr(unittest.TestCase):
 				Or(ValueExpression(True, bool),
 					ValueExpression(None, incorrect_type, nullable=True))
 
+class TestArithmetic(unittest.TestCase):
+	def test_should_return_error_for_non_numeric_types(self):
+		for incorrect_type in (bool, str):
+			with self.assertRaisesRegex(TypeError, 'numeric'):
+				Arithmetic('+',
+					ValueExpression(None, incorrect_type, nullable=True),
+					ValueExpression(0, int))
+			with self.assertRaisesRegex(TypeError, 'numeric'):
+				Arithmetic('+',
+					ValueExpression(0, int),
+					ValueExpression(None, incorrect_type, nullable=True))
+
+	def test_should_produce_numeric_type(self):
+		cases = [
+			('*', 7, 3, 7*3, int),
+			('*', 7, 3.1, 7*3.1, float),
+			('*', 7.1, 3, 7.1*3, float),
+			('*', 7.4, 3.2, 7.4*3.2, float),
+			('/', 7, 3, 2, int), # integer division
+			('/', 7, 3.1, 7/3.1, float),
+			('/', 7.1, 3, 7.1/3, float),
+			('/', 7.4, 3.2, 7.4/3.2, float),
+			('%', 7, 3, 7%3, int),
+			('%', 7, 3.1, 7%3.1, float),
+			('%', 7.1, 3, 7.1%3, float),
+			('%', 7.4, 3.2, 7.4%3.2, float),
+			('+', 7, 3, 7+3, int),
+			('+', 7, 3.1, 7+3.1, float),
+			('+', 7.1, 3, 7.1+3, float),
+			('+', 7.4, 3.2, 7.4+3.2, float),
+			('-', 7, 3, 7-3, int),
+			('-', 7, 3.1, 7-3.1, float),
+			('-', 7.1, 3, 7.1-3, float),
+			('-', 7.4, 3.2, 7.4-3.2, float)
+		]
+		for op, lhs, rhs, expected_value, expected_type in cases:
+			expr = Arithmetic(op, Constant(lhs), Constant(rhs))
+			display = '%d %s %d' % (lhs, op, rhs)
+			self.assertEqual(expr.value_type(), expected_type, msg=display)
+			self.assertEqual(expr.evaluate([]), expected_value, msg=display)
+
+	def test_should_do_integer_division(self):
+		expr = Arithmetic('/', ValueExpression(7, int), ValueExpression(3, int))
+		self.assertEqual(expr.value_type(), int)
+		self.assertEqual(expr.evaluate([]), 2)
+
+# nulls
+# implicit conversions
+# TODO: test type and nullability attributes
+
 # TODO:
 # attributes - value type, nullability
 # different types - throw error for now
