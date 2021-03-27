@@ -570,6 +570,67 @@ class TestIsNotNull(unittest.TestCase):
 			self.assertFalse(expr.nullable())
 			self.assertEqual(expr.evaluate([]), expected_value)
 
+class TestSelection(unittest.TestCase):
+	def test_should_return_error_for_non_boolean_expression(self):
+		for incorrect_type in (int, float, str):
+			with self.assertRaisesRegex(TypeError, 'Predicate'):
+				Selection(MaterialRelation([Column('x', int)]),
+				ValueExpression(None, incorrect_type))
+
+	def test_should_have_same_columns_as_input(self):
+		relation = Selection(MaterialRelation([
+			Column('name', str, nullable=False),
+			Column('age', int, nullable=True)
+		], name='Users'),
+		Constant(False))
+
+		self.assertEqual(len(relation.columns), 2)
+		self.assertEqual(relation.columns[0].name, 'name')
+		self.assertEqual(relation.columns[0].type, str)
+		self.assertEqual(relation.columns[0].nullable, False)
+		self.assertEqual(relation.columns[0].index, 0)
+		self.assertEqual(relation.columns[1].name, 'age')
+		self.assertEqual(relation.columns[1].type, int)
+		self.assertEqual(relation.columns[1].nullable, True)
+		self.assertEqual(relation.columns[1].index, 1)
+
+		self.assertIsNone(relation.name)
+		relation.set_name('NoUsers')
+		self.assertEqual(relation.name, 'NoUsers')
+
+	def test_should_return_elements_matching_predicate(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int), Column('female', bool)
+		])
+		relation.insert(('Alice', 25, True))
+		relation.insert(('Bob', 24, False))
+		relation.insert(('Eve', 21, True))
+		relation.insert(('Mallory', 35, True))
+
+		selection = Selection(relation,
+						Or(Comparison('<', Attribute(relation.columns[1]),
+											Constant(24)),
+							LogicalNot(Attribute(relation.columns[2]))))
+		self.assertEqual(list(selection),
+						[('Bob', 24, False), ('Eve', 21, True)])
+
+	def test_should_not_return_elements_where_predicate_is_null(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int, nullable=True),
+		])
+		relation.insert(('Alice', 25))
+		relation.insert(('Bob', 24))
+		relation.insert(('Eve', 21))
+		relation.insert(('Mallory', None))
+
+		selection = Selection(relation, Comparison('<',
+											Attribute(relation.columns[1]),
+											Constant(24)))
+		self.assertEqual(list(selection), [('Eve', 21)])
+
+# TODO:
+# - expression in select predicate, generalized projection, or aggregation
+#   references columns not in the input relation
 # nulls
 # implicit conversions
 # TODO: test type and nullability attributes

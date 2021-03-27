@@ -338,46 +338,6 @@ class IsNotNull(Expression):
 	def evaluate(self, row):
 		return self.expression.evaluate(row) != None
 
-# Have select statement expressions are predicates
-# class Predicate(Expression):
-# 	def __init__(self, expression):
-# 		if expression.value_type() != bool:
-# 			raise TypeError(
-# 				'Predicates must be expressions evaluating to boolean values')
-# 		self = expression # TODO: does this work?
-
-# TODO:
-# - have type and named type classes
-# - name normalization
-#
-# Expression:
-# - string: || (concatenation), LIKE (regex match), substring, case transforms
-#
-# Predicate
-# eval(tuple) -> bool
-# - special case of expression
-#
-# Adopt consistent terminology
-# - tuple vs row
-# - attribute vs column
-# - relation vs table
-#
-# Aggregations
-# - initial value
-# - update(expression)
-# - final
-# name() -> string # optional name for the aggregation
-#
-# Sorting
-# - sort key
-# - sort order
-#
-# Optimizations
-# - not nullible case
-#   - evaluation of most expressions is much simpler
-#   - IS NULL always false
-#   - IS NOT NULL always true
-
 class Selection(Relation):
 	def __init__(self, relation, predicate):
 		'''
@@ -385,6 +345,14 @@ class Selection(Relation):
 		The derived relation is optionally given a name.
 		'''
 		super().__init__(relation.columns)
+		if predicate.value_type() != bool:
+			raise TypeError('Predicate must be a boolean valued expression')
+		self.relation = relation
+		self.predicate = predicate
+
+	def __iter__(self):
+		return (row for row in self.relation if self.predicate.evaluate(row))
+
 
 class Deduplicate(Relation):
 	def __init__(self, relation):
@@ -486,6 +454,38 @@ class InnerJoin(Relation):
 	def __init__(self, lhs_relation, rhs_relation, predicate):
 		pass
 
+# TODO:
 # LeftOuterJoin
 # RightOuterJoin
 # FullOuterJoin
+
+# - have type and named type classes
+# - name normalization
+#
+# Expression:
+# - string: || (concatenation), LIKE (regex match), substring, case transforms
+#
+# Predicate
+# eval(tuple) -> bool
+# - special case of expression
+#
+# Adopt consistent terminology
+# - tuple vs row
+# - attribute vs column
+# - relation vs table
+#
+# Aggregations
+# - initial value
+# - update(expression)
+# - final
+# name() -> string # optional name for the aggregation
+#
+# Sorting
+# - sort key
+# - sort order
+#
+# Optimizations
+# - not nullible case
+#   - evaluation of most expressions is much simpler
+#   - IS NULL always false
+#   - IS NOT NULL always true
