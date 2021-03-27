@@ -360,6 +360,7 @@ class Deduplicate(Relation):
 		Represents a relation with all duplicate tuples removed.
 		'''
 
+# TODO: name columns in output
 class GeneralizedProjection(Relation):
 	def __init__(self, relation, expressions):
 		'''
@@ -367,7 +368,19 @@ class GeneralizedProjection(Relation):
 		terms of the input tuple attributes. There is an output tuple for each
 		input tuple.
 		'''
-		pass
+		columns = []
+		for expression in expressions:
+			# TODO: Infer name when possible (e.g. When expression is an
+			# attribute, reuse the attribute name)
+			column = Column(None,expression.value_type(), expression.nullable())
+			columns.append(column)
+		super().__init__(columns)
+		self.relation = relation
+		self.expressions = expressions
+
+	def __iter__(self):
+		project = lambda row: tuple([x.evaluate(row) for x in self.expressions])
+		return (project(row) for row in self.relation)
 
 class GroupBy(Relation):
 	def __init__(self, relation, grouping_columns, aggregations=[]):

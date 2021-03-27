@@ -628,6 +628,44 @@ class TestSelection(unittest.TestCase):
 											Constant(24)))
 		self.assertEqual(list(selection), [('Eve', 21)])
 
+class TestGeneralizedProjection(unittest.TestCase):
+	def test_should_have_schema(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int, nullable=True),
+			Column('female', bool, nullable=False)
+		])
+		projection = GeneralizedProjection(relation, [
+			Arithmetic('-', Constant(2021), Attribute(relation.columns[1])),
+			LogicalNot(Attribute(relation.columns[2]))
+		])
+		self.assertEqual(len(projection.columns), 2)
+		self.assertEqual(projection.columns[0].type, int)
+		self.assertEqual(projection.columns[0].nullable, True)
+		self.assertEqual(projection.columns[0].index, 0)
+		self.assertEqual(projection.columns[1].type, bool)
+		self.assertEqual(projection.columns[1].nullable, False)
+		self.assertEqual(projection.columns[1].index, 1)
+		# TODO: set names
+
+	def test_should_generate_output(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int, nullable=True),
+			Column('female', bool, nullable=False)
+		])
+		relation.insert(('Alice', 25, True))
+		relation.insert(('Bob', 24, False))
+		relation.insert(('Eve', 21, True))
+		relation.insert(('Mallory', 35, True))
+
+		projection = GeneralizedProjection(relation, [
+			Arithmetic('-', Constant(2021), Attribute(relation.columns[1])),
+			LogicalNot(Attribute(relation.columns[2]))
+		])
+
+		self.assertEqual(list(projection),
+					[(1996, False), (1997, True), (2000, False), (1986, False)])
+
+
 # TODO:
 # - expression in select predicate, generalized projection, or aggregation
 #   references columns not in the input relation
