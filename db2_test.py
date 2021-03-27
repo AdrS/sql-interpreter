@@ -225,7 +225,7 @@ class TestComparison(unittest.TestCase):
 			('<>', 'Bob', 'Alice', True),
 		]
 		for op, lhs, rhs, expected_result in cases:
-			expr = Comparision(op, Constant(lhs), Constant(rhs))
+			expr = Comparison(op, Constant(lhs), Constant(rhs))
 			self.assertEqual(expr.value_type(), bool)
 			description = '%r %s %r' % (lhs, op, rhs)
 			result = expr.evaluate([])
@@ -245,7 +245,7 @@ class TestComparison(unittest.TestCase):
 			('=', None, None, int),
 		]
 		for op, lhs, rhs, operand_type in cases:
-			expr = Comparision(op,
+			expr = Comparison(op,
 					ValueExpression(lhs, operand_type, nullable=True),
 					ValueExpression(rhs, operand_type, nullable=True))
 			self.assertTrue(expr.nullable())
@@ -261,14 +261,14 @@ class TestComparison(unittest.TestCase):
 			(True, True, True)
 		]
 		for lhs_null, rhs_null, result_null in cases:
-			expr = Comparision('=',
+			expr = Comparison('=',
 					ValueExpression(0, int, nullable=lhs_null),
 					ValueExpression(0, int, nullable=rhs_null))
 			self.assertEqual(expr.nullable(), result_null)
 
 	def test_should_return_error_if_operands_have_different_types(self):
 		with self.assertRaisesRegex(TypeError, 'same type'):
-			Comparision('=',
+			Comparison('=',
 				ValueExpression(None, bool),
 				ValueExpression(None, int))
 
@@ -389,6 +389,62 @@ class TestCastExpression(unittest.TestCase):
 		for src_type, value, expected in cases:
 			expr = Cast(ValueExpression(value, src_type, nullable=True), str)
 			self.assertEqual(expr.evaluate([]), expected)
+
+class TestAnd(unittest.TestCase):
+	def test_should_evaluate_for_booleans(self):
+		cases= [
+			(None, None, None),
+			(None, False, False),
+			(None, True, None),
+			(False, None, False),
+			(False, False, False),
+			(False, True, False),
+			(True, None, None),
+			(True, False, False),
+			(True, True, True),
+		]
+		for lhs, rhs, expected_result in cases:
+			expr = And(ValueExpression(lhs, bool),
+					ValueExpression(rhs, bool))
+			display = '%r AND %r' % (lhs, rhs)
+			self.assertEqual(expr.evaluate([]), expected_result, msg=display)
+
+	def test_should_return_type_error_for_non_booleans(self):
+		for incorrect_type in (int, float, str):
+			with self.assertRaisesRegex(TypeError, 'boolean'):
+				And(ValueExpression(None, incorrect_type, nullable=True),
+					ValueExpression(True, bool))
+			with self.assertRaisesRegex(TypeError, 'boolean'):
+				And(ValueExpression(True, bool),
+					ValueExpression(None, incorrect_type, nullable=True))
+
+class TestOr(unittest.TestCase):
+	def test_should_evaluate_for_booleans(self):
+		cases= [
+			(None, None, None),
+			(None, False, None),
+			(None, True, True),
+			(False, None, None),
+			(False, False, False),
+			(False, True, True),
+			(True, None, True),
+			(True, False, True),
+			(True, True, True),
+		]
+		for lhs, rhs, expected_result in cases:
+			expr = Or(ValueExpression(lhs, bool),
+					ValueExpression(rhs, bool))
+			display = '%r OR %r' % (lhs, rhs)
+			self.assertEqual(expr.evaluate([]), expected_result, msg=display)
+
+	def test_should_return_type_error_for_non_booleans(self):
+		for incorrect_type in (int, float, str):
+			with self.assertRaisesRegex(TypeError, 'boolean'):
+				Or(ValueExpression(None, incorrect_type, nullable=True),
+					ValueExpression(True, bool))
+			with self.assertRaisesRegex(TypeError, 'boolean'):
+				Or(ValueExpression(True, bool),
+					ValueExpression(None, incorrect_type, nullable=True))
 
 # TODO:
 # attributes - value type, nullability

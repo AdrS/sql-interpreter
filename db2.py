@@ -132,6 +132,7 @@ def str_to_float(s):
 
 class Cast(Expression):
 	conversion_functions = {
+		# TODO: raise error for casting type T to type T
 		bool: {
 			bool: lambda x: x,
 			int: lambda x: int(x) if x != None else None,
@@ -175,10 +176,53 @@ class Cast(Expression):
 			return None
 		return self.op(self.expression.evaluate(row))
 
-# class BinaryOperation(Expression):
-# 	def __init__(self, lhs, 
+class BinaryOperation(Expression):
+	def __init__(self, lhs, rhs):
+		self.lhs = lhs
+		self.rhs = rhs
 
-class Comparision(Expression):
+	def nullable(self):
+		return self.lhs.nullable() or self.rhs.nullable()
+
+class And(BinaryOperation):
+	def __init__(self, lhs, rhs):
+		super().__init__(lhs, rhs)
+		if lhs.value_type() != bool or rhs.value_type() != bool:
+			raise TypeError('Operands of and must be booleans')
+
+	def value_type(self):
+		return bool
+
+	def evaluate(self, row):
+		lhs = self.lhs.evaluate(row)
+		if lhs == False:
+			return False
+		if lhs == True:
+			return self.rhs.evaluate(row)
+		if self.rhs.evaluate(row) == False:
+			return False
+		return None
+
+class Or(BinaryOperation):
+	def __init__(self, lhs, rhs):
+		super().__init__(lhs, rhs)
+		if lhs.value_type() != bool or rhs.value_type() != bool:
+			raise TypeError('Operands of or must be booleans')
+
+	def value_type(self):
+		return bool
+
+	def evaluate(self, row):
+		lhs = self.lhs.evaluate(row)
+		if lhs == True:
+			return True
+		if lhs == False:
+			return self.rhs.evaluate(row)
+		if self.rhs.evaluate(row):
+			return True
+		return None
+
+class Comparison(BinaryOperation):
 	operators = {
 		'<': lambda a, b: a < b,
 		'<=': lambda a, b: a <= b,
@@ -188,18 +232,14 @@ class Comparision(Expression):
 		'<>': lambda a, b: a != b,
 	}
 	def __init__(self, op, lhs, rhs):
+		super().__init__(lhs, rhs)
 		if lhs.value_type() != rhs.value_type():
 			raise TypeError('Operands must have the same type')
-		self.lhs = lhs
-		self.rhs = rhs
-		self.op = Comparision.operators[op]
+		self.op = Comparison.operators[op]
 		# TODO: type checking and null handling
 
 	def value_type(self):
 		return bool
-
-	def nullable(self):
-		return self.lhs.nullable() or self.rhs.nullable()
 
 	def evaluate(self, row):
 		lhs = self.lhs.evaluate(row)
