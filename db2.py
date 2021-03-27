@@ -386,13 +386,18 @@ class Selection(Relation):
 		'''
 		super().__init__(relation.columns)
 
+class Deduplicate(Relation):
+	def __init__(self, relation):
+		'''
+		Represents a relation with all duplicate tuples removed.
+		'''
+
 class GeneralizedProjection(Relation):
-	def __init__(self, relation, expressions, distinct=False):
+	def __init__(self, relation, expressions):
 		'''
 		Represents a relation where each tuple's attributes are expressions in
 		terms of the input tuple attributes. There is an output tuple for each
-		input tuple unless distinct is true in which case duplicate output
-		tuples are omitted.
+		input tuple.
 		'''
 		pass
 
