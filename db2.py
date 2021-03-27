@@ -266,7 +266,7 @@ class Arithmetic(BinaryOperation):
 		super().__init__(lhs, rhs)
 
 		if not (is_numeric(lhs.value_type()) and is_numeric(rhs.value_type())):
-			raise TypeError('Operands to %r must be numeric')
+			raise TypeError('Operands to %r must be numeric' % op)
 		self.type = float if (lhs.value_type() == float or
 								rhs.value_type() == float) else int
 		if op == '/' and self.type == int:
@@ -275,6 +275,68 @@ class Arithmetic(BinaryOperation):
 
 	def value_type(self):
 		return self.type
+
+class UnaryMinus(Expression):
+	def __init__(self, expression):
+		if not is_numeric(expression.value_type()):
+			raise TypeError('Operands to minus must be numeric')
+		self.expression = expression
+
+	def value_type(self):
+		return self.expression.value_type()
+
+	def nullable(self):
+		return self.expression.nullable()
+
+	def evaluate(self, row):
+		value = self.expression.evaluate(row)
+		if value == None:
+			return None
+		return - value
+
+class LogicalNot(Expression):
+	def __init__(self, expression):
+		if expression.value_type() != bool:
+			raise TypeError('Operands to logical not must be boolean')
+		self.expression = expression
+
+	def value_type(self):
+		return bool
+
+	def nullable(self):
+		return self.expression.nullable()
+
+	def evaluate(self, row):
+		value = self.expression.evaluate(row)
+		if value == None:
+			return None
+		return not value
+
+class IsNull(Expression):
+	def __init__(self, expression):
+		self.expression = expression
+
+	def value_type(self):
+		return bool
+
+	def nullable(self):
+		return False
+
+	def evaluate(self, row):
+		return self.expression.evaluate(row) == None
+
+class IsNotNull(Expression):
+	def __init__(self, expression):
+		self.expression = expression
+
+	def value_type(self):
+		return bool
+
+	def nullable(self):
+		return False
+
+	def evaluate(self, row):
+		return self.expression.evaluate(row) != None
 
 # Have select statement expressions are predicates
 # class Predicate(Expression):
@@ -289,8 +351,6 @@ class Arithmetic(BinaryOperation):
 # - name normalization
 #
 # Expression:
-# - unary: minus, logical not, NULL, NOT NULL
-# - arithmetic: +, -, *, /, mod
 # - string: || (concatenation), LIKE (regex match), substring, case transforms
 #
 # Predicate
@@ -311,6 +371,12 @@ class Arithmetic(BinaryOperation):
 # Sorting
 # - sort key
 # - sort order
+#
+# Optimizations
+# - not nullible case
+#   - evaluation of most expressions is much simpler
+#   - IS NULL always false
+#   - IS NOT NULL always true
 
 class Selection(Relation):
 	def __init__(self, relation, predicate):

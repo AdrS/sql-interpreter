@@ -492,6 +492,84 @@ class TestArithmetic(unittest.TestCase):
 		self.assertEqual(expr.value_type(), int)
 		self.assertEqual(expr.evaluate([]), 2)
 
+class TestUnaryMinus(unittest.TestCase):
+	def test_should_return_error_for_non_numeric_type(self):
+		for incorrect_type in (bool, str):
+			with self.assertRaisesRegex(TypeError, 'must be numeric'):
+				UnaryMinus(ValueExpression(None, incorrect_type, nullable=True))
+
+	def test_should_return_same_numeric_type_as_operand(self):
+		cases = [
+			(int, 123, -123),
+			(int, -123, 123),
+			(float, 3.14, -3.14),
+			(int, None, None),
+			(float, None, None)
+		]
+		for operand_type, operand, expected_value in cases:
+			expr = UnaryMinus(
+					ValueExpression(operand, operand_type, nullable=True))
+			self.assertEqual(expr.value_type(), operand_type)
+			self.assertEqual(expr.evaluate([]), expected_value)
+
+class TestLogicalNot(unittest.TestCase):
+	def test_should_return_error_for_non_boolean_types(self):
+		for incorrect_type in (int, float, str):
+			with self.assertRaisesRegex(TypeError, 'must be boolean'):
+				LogicalNot(ValueExpression(None, incorrect_type, nullable=True))
+
+	def test_should_evaluate_to_expected_values(self):
+		cases = [
+			(False, True),
+			(True, False),
+			(None, None)
+		]
+		for operand, expected_value in cases:
+			expr = LogicalNot(
+					ValueExpression(operand, bool, nullable=True))
+			self.assertEqual(expr.value_type(), bool)
+			self.assertEqual(expr.evaluate([]), expected_value)
+
+class TestIsNull(unittest.TestCase):
+	def test_should_evaluate_to_expected_values(self):
+		cases = [
+			(bool, True, False),
+			(bool, None, True),
+			(int, 123, False),
+			(int, None, True),
+			(float, 3.14, False),
+			(float, None, True),
+			(str, '', False),
+			(str, 'hello', False),
+			(str, None, True),
+		]
+		for operand_type, operand, expected_value in cases:
+			expr = IsNull(
+					ValueExpression(operand, operand_type, nullable=True))
+			self.assertEqual(expr.value_type(), bool)
+			self.assertFalse(expr.nullable())
+			self.assertEqual(expr.evaluate([]), expected_value)
+
+class TestIsNotNull(unittest.TestCase):
+	def test_should_evaluate_to_expected_values(self):
+		cases = [
+			(bool, True, True),
+			(bool, None, False),
+			(int, 123, True),
+			(int, None, False),
+			(float, 3.14, True),
+			(float, None, False),
+			(str, '', True),
+			(str, 'hello', True),
+			(str, None, False),
+		]
+		for operand_type, operand, expected_value in cases:
+			expr = IsNotNull(
+					ValueExpression(operand, operand_type, nullable=True))
+			self.assertEqual(expr.value_type(), bool)
+			self.assertFalse(expr.nullable())
+			self.assertEqual(expr.evaluate([]), expected_value)
+
 # nulls
 # implicit conversions
 # TODO: test type and nullability attributes
