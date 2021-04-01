@@ -665,6 +665,50 @@ class TestGeneralizedProjection(unittest.TestCase):
 		self.assertEqual(list(projection),
 					[(1996, False), (1997, True), (2000, False), (1986, False)])
 
+class TestSort(unittest.TestCase):
+	def test_should_sort_ascending_by_default(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int),
+		])
+		relation.insert(('Mallory', 35))
+		relation.insert(('Alice', 13))
+		relation.insert(('Bob', 24))
+		relation.insert(('Alice', 25))
+
+		ordered = Sort(relation)
+		self.assertEqual(list(ordered),
+			[('Alice', 13), ('Alice', 25), ('Bob', 24), ('Mallory', 35)])
+
+	def test_descending(self):
+		relation = MaterialRelation([Column('name', str)])
+		relation.insert(('Mallory',))
+		relation.insert(('Alice',))
+		relation.insert(('Bob',))
+
+		ordered = Sort(relation, descending=True)
+		self.assertEqual(list(ordered), [('Mallory',), ('Bob',), ('Alice',)])
+
+	def test_should_sort_by_attributes(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int),
+		])
+		relation.insert(('Mallory', 35))
+		relation.insert(('Alice', 13))
+		relation.insert(('Bob', 24))
+		relation.insert(('Alice', 25))
+
+		ordered = Sort(relation,
+						sort_key=[relation.columns[1], relation.columns[0]])
+		self.assertEqual(list(ordered),
+			[('Alice', 13), ('Bob', 24), ('Alice', 25), ('Mallory', 35)])
+
+	def test_should_return_error_for_invalid_sort_attribute(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int),
+		])
+		invalid_column = Column('country', str)
+		with self.assertRaisesRegex(ValueError, 'not a column'):
+			Sort(relation, sort_key=[relation.columns[1], invalid_column])
 
 # TODO:
 # - expression in select predicate, generalized projection, or aggregation

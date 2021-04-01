@@ -382,6 +382,27 @@ class GeneralizedProjection(Relation):
 		project = lambda row: tuple([x.evaluate(row) for x in self.expressions])
 		return (project(row) for row in self.relation)
 
+class Sort(MaterialRelation):
+	def __init__(self, relation, sort_key=None, descending=False):
+		super().__init__(relation.columns)
+		self.relation = relation
+		self.sort_key = None
+		if sort_key:
+			for column in sort_key:
+				if column not in relation.columns:
+					raise ValueError(
+					'Sort key %r is not a column of the relation' % column.name)
+			self.sort_key = lambda row: [
+				row[column.index] for column in sort_key]
+		self.descending = descending
+		self.materialized = False
+
+	def __iter__(self):
+		if not self.materialized:
+			self.rows = list(self.relation)
+			self.rows.sort(key=self.sort_key, reverse=self.descending)
+		return self.rows.__iter__()
+
 class GroupBy(Relation):
 	def __init__(self, relation, grouping_columns, aggregations=[]):
 		'''
@@ -477,6 +498,7 @@ class InnerJoin(Relation):
 #
 # Expression:
 # - string: || (concatenation), LIKE (regex match), substring, case transforms
+# - x IN <relation>, x NOT IN <relation>
 #
 # Predicate
 # eval(tuple) -> bool
@@ -494,8 +516,7 @@ class InnerJoin(Relation):
 # name() -> string # optional name for the aggregation
 #
 # Sorting
-# - sort key
-# - sort order
+# - Fancy sort orders... ORDER BY  X ASC, Y DESC, Z DESC
 #
 # Optimizations
 # - not nullible case
