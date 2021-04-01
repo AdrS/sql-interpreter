@@ -1,3 +1,5 @@
+import itertools
+
 # types: INTEGER, FLOAT, STRING, BOOLEAN
 
 class Column:
@@ -403,6 +405,62 @@ class Sort(MaterialRelation):
 			self.rows.sort(key=self.sort_key, reverse=self.descending)
 		return self.rows.__iter__()
 
+def set_operation_schema(relations):
+	# TODO: doc
+	columns = [column.transform() for column in relations[0].columns]
+	for relation in relations:
+		if len(relation.columns) != len(columns):
+			raise ValueError(
+					'Relations must have the same number of columns')
+		for i, column in enumerate(relation.columns):
+			if column.type != columns[i].type:
+				raise ValueError(
+						'Relations must have the same column types')
+			if column.nullable:
+				columns[i].nullable = True
+	return columns
+
+class UnionAll(Relation):
+	def __init__(self, relations):
+		'''
+		Represents a relation including all the tuples of the input relations.
+
+		The input relations must have the same number of columns and the columns
+		must have the same types. Duplicates tuples are included.
+		'''
+		super().__init__(set_operation_schema(relations))
+		self.relations = relations
+
+	def __iter__(self):
+		return itertools.chain(*self.relations)
+		
+
+class Intersection(Relation):
+	def __init__(self, relations, distinct=True):
+		'''
+		Represents a relation consisting of only the tuples present in all the
+		input relations.
+
+		The input relations must have the same number of columns and the columns
+		must have the same types.
+
+		If distinct is true, duplicate tuples are omitted.
+		'''
+		pass
+
+class Difference(Relation):
+	def __init__(self, lhs_relation, rhs_relation, distinct=True):
+		'''
+		Represents a relation consisting of tuples present in the left relation
+		but not the right relation.
+
+		The input relations must have the same number of columns and the columns
+		must have the same types.
+
+		If distinct is true, duplicate tuples are omitted.
+		'''
+		pass
+
 class GroupBy(Relation):
 	def __init__(self, relation, grouping_columns, aggregations=[]):
 		'''
@@ -431,49 +489,6 @@ def generate_names(n):
 	'Returns n auto-generated column names'
 	return ['f_%d' for i in range(n)]
 
-class Union(Relation):
-	def __init__(self, relations, distinct=True):
-		'''
-		Represents a relation including all the tuples of the input relations.
-
-		The input relations must have the same number of columns and the columns
-		must have the same types.
-
-		If distinct is true, duplicate tuples are omitted.
-		'''
-		# TODO: validate input, put in function to share with Intersection and
-		# Difference
-		columns = []
-		for column in relations[0].columns:
-			new_name = renamings.get(column.name, column.name)
-			columns.append(Column(new_name, column.type, column.nullable))
-		super().__init__(columns)
-
-class Intersection(Relation):
-	def __init__(self, relations, distinct=True):
-		'''
-		Represents a relation consisting of only the tuples present in all the
-		input relations.
-
-		The input relations must have the same number of columns and the columns
-		must have the same types.
-
-		If distinct is true, duplicate tuples are omitted.
-		'''
-		pass
-
-class Difference(Relation):
-	def __init__(self, lhs_relation, rhs_relation, distinct=True):
-		'''
-		Represents a relation consisting of tuples present in the left relation
-		but not the right relation.
-
-		The input relations must have the same number of columns and the columns
-		must have the same types.
-
-		If distinct is true, duplicate tuples are omitted.
-		'''
-		pass
 
 class CrossJoin(Relation):
 	def __init__(self, relations):

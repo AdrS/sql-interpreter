@@ -710,6 +710,81 @@ class TestSort(unittest.TestCase):
 		with self.assertRaisesRegex(ValueError, 'not a column'):
 			Sort(relation, sort_key=[relation.columns[1], invalid_column])
 
+class TestUnionAll(unittest.TestCase):
+	def test_should_return_error_for_varying_tuple_length(self):
+		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
+		relation2 = MaterialRelation([Column('a', str)])
+		with self.assertRaisesRegex(ValueError, 'number of columns'):
+			UnionAll([relation1, relation2])
+
+	def test_should_return_error_if_relations_have_different_column_types(self):
+		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
+		relation2 = MaterialRelation([Column('a', str), Column('b', str)])
+		with self.assertRaisesRegex(ValueError, 'column types'):
+			UnionAll([relation1, relation2])
+
+	def test_should_return_duplicate_tuples(self):
+		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
+		relation1.insert(('au', 123))
+		relation1.insert(('ca', 456))
+		relation1.insert(('ca', 456))
+
+		relation2 = MaterialRelation([Column('a', str), Column('b', int)])
+		relation2.insert(('fr', 123))
+		relation2.insert(('ca', 456))
+		relation2.insert(('ch', 789))
+
+		union = UnionAll([relation1, relation2])
+		self.assertEqual(list(union), [('au', 123), ('ca', 456), ('ca', 456),
+			('fr', 123), ('ca', 456), ('ch', 789)])
+
+	def test_should_merge_more_than_two_relations(self):
+		relation1 = MaterialRelation([Column('a', str)])
+		relation1.insert(('au',))
+
+		relation2 = MaterialRelation([Column('a', str)])
+		relation2.insert(('fr',))
+
+		relation3 = MaterialRelation([Column('a', str)])
+		relation3.insert(('us',))
+
+		union = UnionAll([relation1, relation2, relation3])
+		self.assertEqual(list(union), [('au',), ('fr',), ('us',)])
+
+	def test_should_merge_relations_with_different_column_names(self):
+		relation1 = MaterialRelation([Column('a', str)])
+		relation1.insert(('au',))
+
+		relation2 = MaterialRelation([Column('b', str)])
+		relation2.insert(('fr',))
+		union = UnionAll([relation1, relation2])
+		self.assertEqual(list(union), [('au',), ('fr',)])
+
+	def test_should_use_first_relations_column_names_for_output(self):
+		relation1 = MaterialRelation([Column('a', str), Column('x', int)])
+		relation2 = MaterialRelation([Column('b', str), Column('y', int)])
+		union = UnionAll([relation1, relation2])
+		self.assertEqual(len(union.columns), 2)
+		self.assertEqual(union.columns[0].name, 'a')
+		self.assertEqual(union.columns[0].index, 0)
+		self.assertEqual(union.columns[1].name, 'x')
+		self.assertEqual(union.columns[1].index, 1)
+
+	def test_should_be_nullable_when_any_input_relation_is_nullable(self):
+		relation1 = MaterialRelation([
+			Column('a', str, nullable=False),
+			Column('b', int, nullable=False),
+		])
+		relation2 = MaterialRelation([
+			Column('a', str, nullable=False),
+			Column('b', int, nullable=True),
+		])
+		union = UnionAll([relation1, relation2])
+		self.assertFalse(union.columns[0].nullable)
+		self.assertTrue(union.columns[1].nullable)
+
+	# TODO: return error for no input relations
+
 # TODO:
 # - expression in select predicate, generalized projection, or aggregation
 #   references columns not in the input relation
