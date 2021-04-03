@@ -665,6 +665,81 @@ class TestGeneralizedProjection(unittest.TestCase):
 		self.assertEqual(list(projection),
 					[(1996, False), (1997, True), (2000, False), (1986, False)])
 
+class TestNextValue(unittest.TestCase):
+	def test(self):
+		a = [1,2,3]
+		it = a.__iter__()
+
+		self.assertEqual(next_value(it), 1)
+		self.assertEqual(next_value(it), 2)
+		self.assertEqual(next_value(it), 3)
+		self.assertIsNone(next_value(it))
+		self.assertIsNone(next_value(it))
+
+class TestRemoveDuplicates(unittest.TestCase):
+	def test_empty_stream(self):
+		self.assertEqual(list(remove_duplicates([].__iter__())), [])
+
+	def test_removes_duplicates(self):
+		cases = [
+			([], []),
+			([1, 2, 3], [1, 2, 3]),
+			([1, 1, 2, 2, 3, 3], [1, 2, 3]),
+		]
+		for dupes, deduped in cases:
+			self.assertEqual(list(remove_duplicates(dupes.__iter__())), deduped)
+
+class TestStreamUnion(unittest.TestCase):
+	def test(self):
+		cases = [
+			([], [1, 2, 3, 3], [1, 2, 3, 3]),
+			([1, 3], [2, 4], [1, 2, 3, 4]),
+			([1, 3], [3, 4], [1, 3, 3, 4]),
+		]
+		for a, b, u in cases:
+			self.assertEqual(list(stream_union(a.__iter__(), b.__iter__())), u)
+			self.assertEqual(list(stream_union(b.__iter__(), a.__iter__())), u)
+
+class TestStreamIntersection(unittest.TestCase):
+	def test(self):
+		cases = [
+			([], [1, 2, 3, 3], []),
+			([1, 3], [2, 4], []),
+			([1, 3], [3, 4], [3]),
+			([1, 3, 3, 4], [3, 4], [3, 3, 3, 4]),
+		]
+		for a, b, i in cases:
+			self.assertEqual(
+				list(stream_intersection(a.__iter__(), b.__iter__())), i)
+			self.assertEqual(
+				list(stream_intersection(b.__iter__(), a.__iter__())), i)
+
+class TestStreamDifference(unittest.TestCase):
+	def test(self):
+		cases = [
+			([], [1, 2, 3, 3], []),
+			([1, 2, 3, 3], [], [1, 2, 3, 3]),
+			([1, 3], [2, 4], [1, 3]),
+			([1, 1, 3, 3], [3, 4], [1]),
+		]
+		for a, b, d in cases:
+			self.assertEqual(
+				list(stream_difference(a.__iter__(), b.__iter__())), d)
+
+
+class TestStreamIntersection(unittest.TestCase):
+	def test(self):
+		lhs = [1, 1, 1, 3, 4, 5, 5, 6].__iter__()
+		rhs = [1, 4, 6, 7].__iter__()
+		self.assertEqual(list(stream_intersection(lhs, rhs)),
+				[1, 1, 1, 1, 4, 4, 6, 6])
+
+class TestStreamDifference(unittest.TestCase):
+	def test(self):
+		lhs = [1, 1, 1, 3, 4, 5, 5, 6].__iter__()
+		rhs = [1, 4, 6, 7].__iter__()
+		self.assertEqual(list(stream_difference(lhs, rhs)), [3, 5, 5])
+
 class TestSort(unittest.TestCase):
 	def test_should_sort_ascending_by_default(self):
 		relation = MaterialRelation([
@@ -710,60 +785,62 @@ class TestSort(unittest.TestCase):
 		with self.assertRaisesRegex(ValueError, 'not a column'):
 			Sort(relation, sort_key=[relation.columns[1], invalid_column])
 
-class TestUnionAll(unittest.TestCase):
+class TestUnion(unittest.TestCase):
 	def test_should_return_error_for_varying_tuple_length(self):
-		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
-		relation2 = MaterialRelation([Column('a', str)])
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs = MaterialRelation([Column('a', str)])
 		with self.assertRaisesRegex(ValueError, 'number of columns'):
-			UnionAll([relation1, relation2])
+			Union(lhs, rhs)
 
 	def test_should_return_error_if_relations_have_different_column_types(self):
-		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
-		relation2 = MaterialRelation([Column('a', str), Column('b', str)])
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs = MaterialRelation([Column('a', str), Column('b', str)])
 		with self.assertRaisesRegex(ValueError, 'column types'):
-			UnionAll([relation1, relation2])
+			Union(lhs, rhs)
 
-	def test_should_return_duplicate_tuples(self):
-		relation1 = MaterialRelation([Column('a', str), Column('b', int)])
-		relation1.insert(('au', 123))
-		relation1.insert(('ca', 456))
-		relation1.insert(('ca', 456))
+	def test_should_return_duplicate_tuples_for_union_all(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+		lhs.insert(('ca', 456))
 
-		relation2 = MaterialRelation([Column('a', str), Column('b', int)])
-		relation2.insert(('fr', 123))
-		relation2.insert(('ca', 456))
-		relation2.insert(('ch', 789))
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
 
-		union = UnionAll([relation1, relation2])
+		union = Union(lhs, rhs, distinct=False)
 		self.assertEqual(list(union), [('au', 123), ('ca', 456), ('ca', 456),
-			('fr', 123), ('ca', 456), ('ch', 789)])
+			('ca', 456), ('ch', 789), ('fr', 123)])
 
-	def test_should_merge_more_than_two_relations(self):
-		relation1 = MaterialRelation([Column('a', str)])
-		relation1.insert(('au',))
+	def test_should_omit_duplicate_tuples_for_union_distinct(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+		lhs.insert(('ca', 456))
 
-		relation2 = MaterialRelation([Column('a', str)])
-		relation2.insert(('fr',))
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
 
-		relation3 = MaterialRelation([Column('a', str)])
-		relation3.insert(('us',))
-
-		union = UnionAll([relation1, relation2, relation3])
-		self.assertEqual(list(union), [('au',), ('fr',), ('us',)])
+		union = Union(lhs, rhs, distinct=True)
+		self.assertEqual(list(union),
+			[('au', 123), ('ca', 456), ('ch', 789), ('fr', 123)])
 
 	def test_should_merge_relations_with_different_column_names(self):
-		relation1 = MaterialRelation([Column('a', str)])
-		relation1.insert(('au',))
+		lhs = MaterialRelation([Column('a', str)])
+		lhs.insert(('au',))
 
-		relation2 = MaterialRelation([Column('b', str)])
-		relation2.insert(('fr',))
-		union = UnionAll([relation1, relation2])
+		rhs = MaterialRelation([Column('b', str)])
+		rhs.insert(('fr',))
+		union = Union(lhs, rhs)
 		self.assertEqual(list(union), [('au',), ('fr',)])
 
 	def test_should_use_first_relations_column_names_for_output(self):
-		relation1 = MaterialRelation([Column('a', str), Column('x', int)])
-		relation2 = MaterialRelation([Column('b', str), Column('y', int)])
-		union = UnionAll([relation1, relation2])
+		lhs = MaterialRelation([Column('a', str), Column('x', int)])
+		rhs = MaterialRelation([Column('b', str), Column('y', int)])
+		union = Union(lhs, rhs)
 		self.assertEqual(len(union.columns), 2)
 		self.assertEqual(union.columns[0].name, 'a')
 		self.assertEqual(union.columns[0].index, 0)
@@ -771,19 +848,78 @@ class TestUnionAll(unittest.TestCase):
 		self.assertEqual(union.columns[1].index, 1)
 
 	def test_should_be_nullable_when_any_input_relation_is_nullable(self):
-		relation1 = MaterialRelation([
+		lhs = MaterialRelation([
 			Column('a', str, nullable=False),
 			Column('b', int, nullable=False),
 		])
-		relation2 = MaterialRelation([
+		rhs = MaterialRelation([
 			Column('a', str, nullable=False),
 			Column('b', int, nullable=True),
 		])
-		union = UnionAll([relation1, relation2])
+		union = Union(lhs, rhs)
 		self.assertFalse(union.columns[0].nullable)
 		self.assertTrue(union.columns[1].nullable)
 
-	# TODO: return error for no input relations
+class TestIntersection(unittest.TestCase):
+	def test_should_return_duplicate_tuples_for_intersection_all(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+		lhs.insert(('ca', 456))
+
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
+
+		intersection = Intersection(lhs, rhs, distinct=False)
+		self.assertEqual(list(intersection), [('ca', 456), ('ca', 456),
+			('ca', 456)])
+
+	def test_should_omit_duplicate_tuples_for_intersection_distinct(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+		lhs.insert(('ca', 456))
+		lhs.insert(('ch', 789))
+
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
+
+		intersection = Intersection(lhs, rhs, distinct=True)
+		self.assertEqual(list(intersection), [('ca', 456), ('ch', 789)])
+		self.assertTrue(intersection.columns[1].nullable)
+
+class TestDifference(unittest.TestCase):
+	def test_should_return_duplicate_tuples_for_difference_all(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
+
+		difference = Difference(lhs, rhs, distinct=False)
+		self.assertEqual(list(difference), [('au', 123), ('au', 123)])
+
+	def test_should_omit_duplicate_tuples_for_difference_distinct(self):
+		lhs = MaterialRelation([Column('a', str), Column('b', int)])
+		lhs.insert(('au', 123))
+		lhs.insert(('au', 123))
+		lhs.insert(('ca', 456))
+
+		rhs = MaterialRelation([Column('a', str), Column('b', int)])
+		rhs.insert(('fr', 123))
+		rhs.insert(('ca', 456))
+		rhs.insert(('ch', 789))
+
+		difference = Difference(lhs, rhs, distinct=True)
+		self.assertEqual(list(difference), [('au', 123)])
 
 # TODO:
 # - expression in select predicate, generalized projection, or aggregation

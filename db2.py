@@ -405,61 +405,168 @@ class Sort(MaterialRelation):
 			self.rows.sort(key=self.sort_key, reverse=self.descending)
 		return self.rows.__iter__()
 
-def set_operation_schema(relations):
-	# TODO: doc
-	columns = [column.transform() for column in relations[0].columns]
-	for relation in relations:
-		if len(relation.columns) != len(columns):
-			raise ValueError(
-					'Relations must have the same number of columns')
-		for i, column in enumerate(relation.columns):
-			if column.type != columns[i].type:
-				raise ValueError(
-						'Relations must have the same column types')
-			if column.nullable:
-				columns[i].nullable = True
+def create_compatible_schema(lhs_relation, rhs_relation):
+	'''
+	Returns a schema compatible with both relations.
+
+	The names of the columns in the returned schema are the same as the names of
+	the lhs relation and a column is nullable if either of the corresponding
+	input columns are nullable.
+
+	The relations must have the same number of columns and they must have the
+	same data types.
+	'''
+	if len(lhs_relation.columns) != len(rhs_relation.columns):
+		raise ValueError('Relations must have the same number of columns')
+	columns = [column.transform() for column in lhs_relation.columns]
+	for i in range(len(lhs_relation.columns)):
+		lhs_column = lhs_relation.columns[i]
+		rhs_column = rhs_relation.columns[i]
+		if lhs_column.type != rhs_column.type:
+			raise ValueError('Relations must have the same column types')
+		columns[i].nullable = lhs_column.nullable or rhs_column.nullable
 	return columns
 
-class UnionAll(Relation):
-	def __init__(self, relations):
-		'''
-		Represents a relation including all the tuples of the input relations.
+def next_value(iterator):
+	'Returns the next value from the iterator or None.'
+	try:
+		return iterator.__next__()
+	except StopIteration:
+		return None
 
-		The input relations must have the same number of columns and the columns
-		must have the same types. Duplicates tuples are included.
-		'''
-		super().__init__(set_operation_schema(relations))
-		self.relations = relations
+def remove_duplicates(iterator):
+	'Produces iterator elements with consecutive duplicate elements removed.'
+	current = next_value(iterator)
+	while current:
+		yield current
+		value = next_value(iterator)
+		while value == current:
+			value = next_value(iterator)
+		current = value
 
-	def __iter__(self):
-		return itertools.chain(*self.relations)
-		
+def stream_union(lhs_iter, rhs_iter):
+	'''
+	Returns a sorted stream with all values - including duplicates - from two
+	sorted input streams.
 
-class Intersection(Relation):
-	def __init__(self, relations, distinct=True):
+	The input streams must be in ascending order.
+	'''
+	lhs = next_value(lhs_iter)
+	rhs = next_value(rhs_iter)
+	while lhs and rhs:
+		if lhs <= rhs:
+			yield lhs
+			lhs = next_value(lhs_iter)
+		else:
+			yield rhs
+			rhs = next_value(rhs_iter)
+	while lhs:
+		yield lhs
+		lhs = next_value(lhs_iter)
+	while rhs:
+		yield rhs
+		rhs = next_value(rhs_iter)
+
+def stream_intersection(lhs_iter, rhs_iter):
+	'''
+	Returns a sorted stream with all values - including duplicates - which
+	appear in both of the sorted input streams.
+
+	The input streams must be in ascending order.
+	'''
+	lhs = next_value(lhs_iter)
+	rhs = next_value(rhs_iter)
+	while lhs and rhs:
+		if lhs < rhs:
+			lhs = next_value(lhs_iter)
+			continue
+		if lhs > rhs:
+			rhs = next_value(rhs_iter)
+			continue
+		value = lhs
+		while lhs == value:
+			yield lhs
+			lhs = next_value(lhs_iter)
+		while rhs == value:
+			yield rhs
+			rhs = next_value(rhs_iter)
+
+def stream_difference(lhs_iter, rhs_iter):
+	'''
+	Returns a sorted stream with all values - including duplicates - which occur
+	in the lhs sorted input stream, but not the rhs stream.
+
+	The input streams must be in ascending order.
+	'''
+	lhs = next_value(lhs_iter)
+	rhs = next_value(rhs_iter)
+	while lhs and rhs:
+		if lhs < rhs:
+			value = lhs
+			while lhs == value:
+				yield lhs
+				lhs = next_value(lhs_iter)
+		elif lhs == rhs:
+			value = lhs
+			while lhs == value:
+				lhs = next_value(lhs_iter)
+		else:
+			rhs = next_value(rhs_iter)
+	while lhs:
+		yield lhs
+		lhs = next_value(lhs_iter)
+
+class SetCombination(Relation):
+	def __init__(self, combine_streams, lhs, rhs, distinct=True):
 		'''
-		Represents a relation consisting of only the tuples present in all the
-		input relations.
+		Combines the tuples in both input relations by sorting them and passing
+		them though a combining function.
+
+		The combination function must accept a stream of sorted values from the
+		left and right tuples and output a sorted stream of sorted tuples.
 
 		The input relations must have the same number of columns and the columns
 		must have the same types.
 
 		If distinct is true, duplicate tuples are omitted.
 		'''
-		pass
+		super().__init__(create_compatible_schema(lhs, rhs))
+		self.lhs = Sort(lhs)
+		self.rhs = Sort(rhs)
+		if distinct:
+			self.new_iter = lambda: remove_duplicates(
+										combine_streams(self.lhs.__iter__(),
+											self.rhs.__iter__()))
+		else:
+			self.new_iter = lambda: combine_streams(self.lhs.__iter__(),
+										self.rhs.__iter__())
 
-class Difference(Relation):
-	def __init__(self, lhs_relation, rhs_relation, distinct=True):
+	def __iter__(self):
+		return self.new_iter()
+
+class Union(SetCombination):
+	def __init__(self, lhs, rhs, distinct=True):
+		'''
+		Represents a relation including all values from both input relations.
+		'''
+		super().__init__(stream_union, lhs, rhs, distinct)
+		# TODO: do not sort and merge for union all
+
+class Intersection(SetCombination):
+	def __init__(self, lhs, rhs, distinct=True):
+		'''
+		Represents a relation consisting of only the tuples present in both
+		input relations.
+		'''
+		super().__init__(stream_intersection, lhs, rhs, distinct)
+
+class Difference(SetCombination):
+	def __init__(self, lhs, rhs, distinct=True):
 		'''
 		Represents a relation consisting of tuples present in the left relation
 		but not the right relation.
-
-		The input relations must have the same number of columns and the columns
-		must have the same types.
-
-		If distinct is true, duplicate tuples are omitted.
 		'''
-		pass
+		super().__init__(stream_difference, lhs, rhs, distinct)
 
 class GroupBy(Relation):
 	def __init__(self, relation, grouping_columns, aggregations=[]):
