@@ -568,15 +568,208 @@ class Difference(SetCombination):
 		'''
 		super().__init__(stream_difference, lhs, rhs, distinct)
 
+class Aggregate:
+	'Represents the computation of a single aggregate.'
+	def update(self, row):
+		'Adds the row to the computation of the aggregate.'
+		raise NotImplemented
+
+	def final(self):
+		'Returns the final value of the aggregate.'
+		raise NotImplemented
+
+class AggregateFactory:
+	def value_type(self):
+		'Returns the type of the value returned by the aggregate function.'
+		raise NotImplemented
+
+	def nullable(self):
+		'Returns the type of the value returned by the aggregate function.'
+		raise NotImplemented
+
+	def new_aggregate(self):
+		'Returns a new Aggregate object for computing an aggregate.'
+		raise NotImplemented
+
+class Count(Aggregate):
+	'Number of input rows'
+	def __init__(self):
+		self.count = 0
+
+	def update(self, row):
+		self.count += 1
+
+	def final(self):
+		return self.count
+
+# TODO: count(expression) - number of rows where expression is not null
+
+class CountFactory(AggregateFactory):
+	def value_type(self):
+		return int
+
+	def nullable(self):
+		return False
+
+	def new_aggregate(self):
+		return Count()
+
+class Max(Aggregate):
+	'Maximum value of expression across all non-null input values'
+	def __init__(self, expression):
+		self.expression = expression
+		self.max = None
+
+	def update(self, row):
+		value = self.expression.evaluate(row)
+		if self.max == None or (value != None and value > self.max):
+			self.max = value
+
+	def final(self):
+		return self.max
+
+class MaxFactory(AggregateFactory):
+	def __init__(self, expression):
+		self.expression = expression
+
+	def value_type(self):
+		return self.expression.value_type()
+
+	def nullable(self):
+		# Result is NULL when there are no non-null input rows
+		return True
+
+	def new_aggregate(self):
+		return Max(self.expression)
+
+class Min(Aggregate):
+	'Minimum value of expression across all non-null input values'
+	def __init__(self, expression):
+		self.expression = expression
+		self.min = None
+
+	def update(self, row):
+		value = self.expression.evaluate(row)
+		if self.min == None or (value != None and value < self.min):
+			self.min = value
+
+	def final(self):
+		return self.min
+
+class MinFactory(AggregateFactory):
+	def __init__(self, expression):
+		self.expression = expression
+
+	def value_type(self):
+		return self.expression.value_type()
+
+	def nullable(self):
+		# Result is NULL when there are no non-null input rows
+		return True
+
+	def new_aggregate(self):
+		return Min(self.expression)
+
+class Sum(Aggregate):
+	'Sum of expression across all non-null values values'
+	def __init__(self, expression):
+		self.expression = expression
+		self.sum = 0
+
+	def update(self, row):
+		value = self.expression.evaluate(row)
+		if value:
+			self.sum += value
+
+	def final(self):
+		return self.sum
+
+class SumFactory(AggregateFactory):
+	def __init__(self, expression):
+		self.expression = expression
+
+	def value_type(self):
+		return self.expression.value_type()
+
+	def nullable(self):
+		return False
+
+	def new_aggregate(self):
+		return Sum(self.expression)
+
+class Avg(Aggregate):
+	'Avg of expression across all non-null values values'
+	def __init__(self, expression):
+		self.expression = expression
+		self.sum = 0
+		self.count = 0
+
+	def update(self, row):
+		value = self.expression.evaluate(row)
+		if value:
+			self.sum += value
+			self.count += 1
+
+	def final(self):
+		if self.count == 0:
+			return None
+		return self.sum/self.count
+
+class AvgFactory(AggregateFactory):
+	def __init__(self, expression):
+		if not is_numeric(expression.value_type()):
+			raise TypeError('Avg requires a numeric expression')
+		self.expression = expression
+
+	def value_type(self):
+		return float
+
+	def nullable(self):
+		return True
+
+	def new_aggregate(self):
+		return Avg(self.expression)
+
+# TODO: expressions in terms of aggregates
 class GroupBy(Relation):
-	def __init__(self, relation, grouping_columns, aggregations=[]):
+	def __init__(self, relation, grouping_columns, aggregates=[]):
 		'''
 		Represents a relation with one output tuple for each distinct set of
 		values for the grouping columns in the input relation. Output tuples
-		are augmented with aggregations of all tuples sharing the same grouping
+		are augmented with aggregates of all tuples sharing the same grouping
 		column values.
 		'''
-		pass
+		# TODO: check that columns belong to the relation
+		# check that aggregates only refer to relation columns
+		columns = [column.transform() for column in grouping_columns]
+		for aggregate in aggregates:
+			columns.append(Column('', aggregate.value_type(),
+								aggregate.nullable()))
+
+		super().__init__(columns)
+		self.relation = Sort(relation, grouping_columns)
+		self.grouping_columns = grouping_columns
+		self.aggregates = aggregates
+
+	def __iter__(self):
+		current_group = None
+		current_aggregates = None
+		for row in self.relation:
+			row_group = [row[column.index] for column in self.grouping_columns]
+			if row_group != current_group:
+				if current_group != None:
+					for aggregate in current_aggregates:
+						current_group.append(aggregate.final())
+					yield tuple(current_group)
+				current_group = row_group
+				current_aggregates = [
+					a.new_aggregate() for a in self.aggregates]
+			for aggregate in current_aggregates:
+				aggregate.update(row)
+		if current_group != None:
+			for aggregate in current_aggregates:
+				current_group.append(aggregate.final())
+			yield tuple(current_group)
 
 # TODO: Replace with project where expressions handle the rename
 # Rename(relation, {'column_1_old_name': 'new_name', ...}

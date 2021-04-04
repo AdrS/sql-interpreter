@@ -922,6 +922,33 @@ class TestDifference(unittest.TestCase):
 		self.assertEqual(list(difference), [('au', 123)])
 
 # TODO:
+# COUNT(*) - number of input rows
+# COUNT(expr) - number of rows expression is not null
+
+class TestGroupBy(unittest.TestCase):
+	pass
+	# TODO: names of columns, type, nullability
+	# Function, type, nullable?
+	# count, int, false
+	# min, * , true
+	# max, * , true
+	# sum, <numeric>, false (default is 0)
+	# avg - no tuples, no non-null values, non-numeric expression type
+
+	# sum - null values, non-numeric expression type
+	# sum - only valid for numeric types
+	#	- what if expression evaluates to null for non-null input?
+	#	- SUM(NULL)
+	#	- default value of sum is 0 (all null input)
+	# min, max - int, str, float, ...
+	# count if
+
+	# group by - nth column
+
+# Expressions involving aggregates
+# SELECT MAX(x) - MIN(x) FROM R GROUP BY y;
+
+# TODO:
 # - expression in select predicate, generalized projection, or aggregation
 #   references columns not in the input relation
 # nulls
