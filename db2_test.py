@@ -948,6 +948,55 @@ class TestGroupBy(unittest.TestCase):
 # Expressions involving aggregates
 # SELECT MAX(x) - MIN(x) FROM R GROUP BY y;
 
+class TestCrossJoin(unittest.TestCase):
+	def test(self):
+		lhs = MaterialRelation([
+			Column('id', int, nullable=False),
+			Column('name', str, nullable=False)
+		])
+		lhs.insert((1, 'Alice'))
+		lhs.insert((2, 'Bob'))
+		lhs.insert((3, 'Eve'))
+
+		rhs = MaterialRelation([
+			Column('x', str, nullable=True),
+			Column('y', bool, nullable=True),
+			Column('z', float, nullable=False),
+		])
+		rhs.insert(('x', False, 3.14))
+		rhs.insert(('X', True, 2.71))
+
+		product = CrossJoin(lhs, rhs)
+		self.assertEqual(len(product.columns), 5)
+		self.assertEqual(product.columns[0].name, 'id')
+		self.assertEqual(product.columns[0].type, int)
+		self.assertFalse(product.columns[0].nullable)
+		self.assertEqual(product.columns[0].index, 0)
+		self.assertEqual(product.columns[1].name, 'name')
+		self.assertEqual(product.columns[1].type, str)
+		self.assertFalse(product.columns[1].nullable)
+		self.assertEqual(product.columns[1].index, 1)
+		self.assertEqual(product.columns[2].name, 'x')
+		self.assertEqual(product.columns[2].type, str)
+		self.assertTrue(product.columns[2].nullable)
+		self.assertEqual(product.columns[2].index, 2)
+		self.assertEqual(product.columns[3].name, 'y')
+		self.assertEqual(product.columns[3].type, bool)
+		self.assertTrue(product.columns[3].nullable)
+		self.assertEqual(product.columns[3].index, 3)
+		self.assertEqual(product.columns[4].name, 'z')
+		self.assertEqual(product.columns[4].type, float)
+		self.assertFalse(product.columns[4].nullable)
+
+		self.assertEqual(list(product), [
+			(1, 'Alice', 'x', False, 3.14),
+			(1, 'Alice', 'X', True, 2.71),
+			(2, 'Bob', 'x', False, 3.14),
+			(2, 'Bob', 'X', True, 2.71),
+			(3, 'Eve', 'x', False, 3.14),
+			(3, 'Eve', 'X', True, 2.71),
+		])
+
 # TODO:
 # - expression in select predicate, generalized projection, or aggregation
 #   references columns not in the input relation

@@ -791,12 +791,21 @@ def generate_names(n):
 
 
 class CrossJoin(Relation):
-	def __init__(self, relations):
-		'''
-		Represents a relation consisting of the Cartesian product of the input
-		relations.
-		'''
-		pass
+	def __init__(self, lhs, rhs):
+		'A relation consisting of the Cartesian product of the input relations.'
+		columns = []
+		for column in lhs.columns:
+			columns.append(column.transform())
+		for column in rhs.columns:
+			columns.append(column.transform())
+		super().__init__(columns)
+		self.lhs = lhs
+		self.rhs = rhs
+
+	def __iter__(self):
+		for lhs in self.lhs:
+			for rhs in self.rhs:
+				yield tuple(lhs + rhs)
 
 # See: https://postgresql.org/docs/8.3/queries-table-expressions.html#QUERIES-FROM
 class InnerJoin(Relation):
