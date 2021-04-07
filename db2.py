@@ -619,19 +619,25 @@ class AggregateFactory:
 		raise NotImplemented
 
 class Count(Aggregate):
-	'Number of input rows'
-	def __init__(self):
+	def __init__(self, expression=None):
+		'''
+		Counts the number of input rows. If an expression is provided, only
+		rows where the expression evaluates to a non-null value are counted.
+		'''
 		self.count = 0
+		self.expression = expression
 
 	def update(self, row):
-		self.count += 1
+		if self.expression == None or self.expression.evaluate(row) != None:
+			self.count += 1
 
 	def final(self):
 		return self.count
 
-# TODO: count(expression) - number of rows where expression is not null
-
 class CountFactory(AggregateFactory):
+	def __init__(self, expression=None):
+		self.expression = expression
+
 	def value_type(self):
 		return int
 
@@ -639,7 +645,7 @@ class CountFactory(AggregateFactory):
 		return False
 
 	def new_aggregate(self):
-		return Count()
+		return Count(self.expression)
 
 class Max(Aggregate):
 	'Maximum value of expression across all non-null input values'
