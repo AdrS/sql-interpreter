@@ -740,6 +740,24 @@ class TestStreamDifference(unittest.TestCase):
 		rhs = [1, 4, 6, 7].__iter__()
 		self.assertEqual(list(stream_difference(lhs, rhs)), [3, 5, 5])
 
+class TestCompareTuples(unittest.TestCase):
+	def test(self):
+		test_cases = [
+			((2, 3), (2, 4), True, -1),
+			((2, 3), (2, 3), True, 0),
+			((2, 4), (2, 3), True, 1),
+			((2, 3), (2, None), True, -1),
+			((2, 3), (2, None), False, 1),
+			((2, None), (2, 3), True, 1),
+			((2, None), (2, 3), False, -1),
+			((None, 2), (None, 2), True, 0),
+			((None, 2), (None, 3), True, -1),
+			((None, 3), (None, 2), True, 1),
+		]
+		for lhs, rhs, nulls_last, expected in test_cases:
+			self.assertEqual(compare_tuples(lhs, rhs, nulls_last), expected,
+				msg='%r < %r %r' % (lhs, rhs, nulls_last))
+
 class TestSort(unittest.TestCase):
 	def test_should_sort_ascending_by_default(self):
 		relation = MaterialRelation([
@@ -784,6 +802,30 @@ class TestSort(unittest.TestCase):
 		invalid_column = Column('country', str)
 		with self.assertRaisesRegex(ValueError, 'not a column'):
 			Sort(relation, sort_key=[relation.columns[1], invalid_column])
+
+	def test_sort_orders_null_first(self):
+		relation = MaterialRelation([
+			Column('age', int, nullable=True),
+		])
+		relation.insert((35,))
+		relation.insert((13,))
+		relation.insert((None,))
+		relation.insert((25,))
+
+		ordered = Sort(relation, nulls_last=False)
+		self.assertEqual(list(ordered), [(None,), (13,), (25,), (35,)])
+
+	def test_sort_orders_null_last_by_default(self):
+		relation = MaterialRelation([
+			Column('age', int, nullable=True),
+		])
+		relation.insert((35,))
+		relation.insert((13,))
+		relation.insert((None,))
+		relation.insert((25,))
+
+		ordered = Sort(relation)
+		self.assertEqual(list(ordered), [(13,), (25,), (35,), (None,)])
 
 class TestUnion(unittest.TestCase):
 	def test_should_return_error_for_varying_tuple_length(self):

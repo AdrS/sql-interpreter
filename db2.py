@@ -1,3 +1,4 @@
+import functools
 import itertools
 
 # types: INTEGER, FLOAT, STRING, BOOLEAN
@@ -384,25 +385,51 @@ class GeneralizedProjection(Relation):
 		project = lambda row: tuple([x.evaluate(row) for x in self.expressions])
 		return (project(row) for row in self.relation)
 
+def compare_tuples(lhs_tuple, rhs_tuple, nulls_last):
+	'''
+	Compares two tuples accounting for null values. If nulls last is true, null
+	values are treated as greater than any other value.
+	'''
+	for lhs, rhs in zip(lhs_tuple, rhs_tuple):
+		if lhs == None:
+			if rhs != None:
+				return 1 if nulls_last else -1
+		elif rhs == None:
+			return -1 if nulls_last else 1
+		elif lhs < rhs:
+			return -1
+		elif lhs > rhs:
+			return 1
+	return 0
+
 class Sort(MaterialRelation):
-	def __init__(self, relation, sort_key=None, descending=False):
+	def __init__(self, relation, sort_key=None, descending=False,
+			nulls_last=True):
 		super().__init__(relation.columns)
 		self.relation = relation
-		self.sort_key = None
+
 		if sort_key:
 			for column in sort_key:
 				if column not in relation.columns:
 					raise ValueError(
 					'Sort key %r is not a column of the relation' % column.name)
-			self.sort_key = lambda row: [
+			key = lambda row: [
 				row[column.index] for column in sort_key]
+			self.compare = lambda lhs, rhs:\
+				 compare_tuples(key(lhs), key(rhs), nulls_last)
+		else:
+			self.compare = lambda lhs, rhs:\
+				compare_tuples(lhs, rhs, nulls_last)
+
 		self.descending = descending
+		self.nulls_last = nulls_last
 		self.materialized = False
 
 	def __iter__(self):
 		if not self.materialized:
 			self.rows = list(self.relation)
-			self.rows.sort(key=self.sort_key, reverse=self.descending)
+			key = functools.cmp_to_key(self.compare)
+			self.rows.sort(key=key, reverse=self.descending)
 		return self.rows.__iter__()
 
 def create_compatible_schema(lhs_relation, rhs_relation):
