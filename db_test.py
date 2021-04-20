@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from db2 import *
+from db import *
 import unittest
 
 class TestColumn(unittest.TestCase):
