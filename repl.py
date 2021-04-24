@@ -1,9 +1,7 @@
 import lex
 import yacc
-import db
+import relation
 from collections import namedtuple
-
-# TODO(adrs): move into function closure or class
 
 keywords = {
 	#w.lower() : w.upper() for w in
@@ -30,8 +28,6 @@ tokens = (
 	'INTEGER_LITERAL',
 	'STRING_LITERAL',
 ) + tuple(keywords.values())
-
-catalog = {}
 
 def SqlLexer():
 	literals = ['(', ')', ',', ';', '*']
@@ -85,35 +81,7 @@ def p_statement(p):
 				| create_table_statement ';'
 				| select_statement ';'
 	'''
-	statement = p[1]
-	statement_type = type(statement)
-	if statement_type == CreateTableNode:
-		name, columns = statement.name, statement.columns
-		catalog[name] = db.MaterialRelation(columns, name)
-	elif statement_type == InsertIntoNode:
-		table_name, tuples = statement.table_name, statement.tuples
-		if table_name not in catalog:
-			raise KeyError('Table %r does not exist' % table_name)
-		table = catalog[table_name]
-		# TODO: move atomic insert logic into MaterialRelation
-		checkpoint_index = len(table.rows)
-		try:
-			for values in tuples:
-				table.insert(values)
-		except Exception as e:
-			table.rows = table.rows[:checkpoint_index]
-			raise e
-	elif statement_type == SelectNode:
-		relation = catalog[statement.table]
-		expressions = []
-		for expression in statement.select_expressions:
-			if expression.column_name == '*':
-				for column in relation.columns:
-					expressions.append(db.Attribute(column))
-			else:
-				expressions.append(db.Attribute(
-					relation.get_column(expression.column_name)))
-		p[0] = db.GeneralizedProjection(relation, expressions)
+	p[0] = p[1]
 
 def p_create_table_statement(p):
 	'''create_table_statement : CREATE TABLE IDENTIFIER '(' column_list ')' '''
@@ -142,11 +110,7 @@ def p_column_definition(p):
 	}
 	column_type = types_by_name[p[2]]
 	nullability = p[3]
-	p[0] = db.Column(column_name, column_type, nullability)
-
-def p_empty(p):
-	'empty :'
-	pass
+	p[0] = relation.Column(column_name, column_type, nullability)
 
 def p_nullable(p):
 	'''nullability_definition : empty
@@ -227,16 +191,61 @@ def p_column_reference_fully_qualified(p):
 	'''column_reference : IDENTIFIER '.' IDENTIFIER'''
 	p[0] = ColumnReferenceNode(table_name=p[1], column_name=p[3])
 
+def p_empty(p):
+	'empty :'
+	pass
+
 def p_error(p):
 	raise ValueError('Syntax error %r' % p)
 
 lexer = SqlLexer()
 parser = yacc.yacc()
 
-def execute(sql_command):
-	return parser.parse(sql_command, lexer=lexer)
+class Db:
+	def __init__(self):
+		self.catalog = {}
 
-# TODO: rename file repl.py
+	def __execute_create_table(self, node):
+		name, columns = node.name, node.columns
+		self.catalog[name] = relation.MaterialRelation(columns, name)
+
+	def __execute_insert(self, node):
+		table_name, tuples = node.table_name, node.tuples
+		if table_name not in self.catalog:
+			raise KeyError('Table %r does not exist' % table_name)
+		table = self.catalog[table_name]
+		# TODO: move atomic insert logic into MaterialRelation
+		checkpoint_index = len(table.rows)
+		try:
+			for values in tuples:
+				table.insert(values)
+		except Exception as e:
+			table.rows = table.rows[:checkpoint_index]
+			raise e
+
+	def __execute_select(self, node):
+		table = self.catalog[node.table]
+		expressions = []
+		for expression in node.select_expressions:
+			if expression.column_name == '*':
+				for column in table.columns:
+					expressions.append(relation.Attribute(column))
+			else:
+				expressions.append(relation.Attribute(
+					table.get_column(expression.column_name)))
+		return relation.GeneralizedProjection(table, expressions)
+
+	def execute(self, sql_command):
+		ast_root = parser.parse(sql_command, lexer=lexer)
+		statement_type = type(ast_root)
+		if statement_type == CreateTableNode:
+			self.__execute_create_table(ast_root)
+		elif statement_type == InsertIntoNode:
+			self.__execute_insert(ast_root)
+		elif statement_type == SelectNode:
+			return self.__execute_select(ast_root)
+		else:
+			raise TypeError('Unknown AST node type')
 
 if __name__ == '__main__':
 	pass
