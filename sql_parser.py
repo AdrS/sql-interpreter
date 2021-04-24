@@ -11,11 +11,13 @@ keywords = {
 	'create':'CREATE',
 	'false':'FALSE',
 	'float':'FLOAT',
+	'from':'FROM',
 	'insert':'INSERT',
 	'integer':'INTEGER',
 	'into':'INTO',
 	'not':'NOT',
 	'null':'NULL',
+	'select':'SELECT',
 	'string':'STRING',
 	'table':'TABLE',
 	'true':'TRUE',
@@ -32,7 +34,7 @@ tokens = (
 catalog = {}
 
 def SqlLexer():
-	literals = ['(', ')', ',', ';']
+	literals = ['(', ')', ',', ';', '*']
 
 	def t_COMMENT(t):
 		r'--[^\n]*\n'
@@ -67,18 +69,24 @@ def SqlLexer():
 
 	return lex.lex()
 
-CreateTable = namedtuple('CreateTable', ['name', 'columns'])
-InsertInto = namedtuple('InsertInto', ['table_name', 'tuples'])
+CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
+InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
+SelectNode = namedtuple('SelectNode', [
+	'select_expressions',
+	'table'
+])
 
 def p_statement(p):
-	'''statement : insert_into ';'
-				| create_table ';' '''
+	'''statement : insert_statement ';'
+				| create_table_statement ';'
+				| select_statement ';'
+	'''
 	statement = p[1]
 	statement_type = type(statement)
-	if statement_type == CreateTable:
+	if statement_type == CreateTableNode:
 		name, columns = statement.name, statement.columns
 		catalog[name] = db.MaterialRelation(columns, name)
-	elif statement_type == InsertInto:
+	elif statement_type == InsertIntoNode:
 		table_name, tuples = statement.table_name, statement.tuples
 		if table_name not in catalog:
 			raise KeyError('Table %r does not exist' % table_name)
@@ -91,10 +99,12 @@ def p_statement(p):
 		except Exception as e:
 			table.rows = table.rows[:checkpoint_index]
 			raise e
+	elif statement_type == SelectNode:
+		p[0] = catalog[statement.table]
 
-def p_create_table(p):
-	'''create_table : CREATE TABLE IDENTIFIER '(' column_list ')' '''
-	p[0] = CreateTable(name=p[3], columns=p[5])
+def p_create_table_statement(p):
+	'''create_table_statement : CREATE TABLE IDENTIFIER '(' column_list ')' '''
+	p[0] = CreateTableNode(name=p[3], columns=p[5])
 
 def p_column_list_base(p):
 	'''column_list : column_definition'''
@@ -131,9 +141,9 @@ def p_nullable(p):
 							| NOT NULL'''
 	p[0] = len(p) != 3
 
-def p_insert_into(p):
-	'''insert_into : INSERT INTO IDENTIFIER VALUES '(' values_list ')' '''
-	p[0] = InsertInto(table_name=p[3], tuples=p[6])
+def p_insert_statement(p):
+	'''insert_statement : INSERT INTO IDENTIFIER VALUES '(' values_list ')' '''
+	p[0] = InsertIntoNode(table_name=p[3], tuples=p[6])
 
 def p_values_list_base(p):
 	'values_list : tuple_value'
@@ -173,6 +183,10 @@ def p_primative(p):
 	else:
 		p[0] = p[1]
 
+def p_select_statement(p):
+	'''select_statement : SELECT '*' FROM IDENTIFIER'''
+	p[0] = SelectNode(select_expressions=p[2], table=p[4])
+
 def p_error(p):
 	raise ValueError('Syntax error %r' % p)
 
@@ -180,7 +194,7 @@ lexer = SqlLexer()
 parser = yacc.yacc()
 
 def execute(sql_command):
-	parser.parse(sql_command, lexer=lexer)
+	return parser.parse(sql_command, lexer=lexer)
 
 # TODO: rename file repl.py
 

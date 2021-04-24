@@ -59,7 +59,6 @@ class TestCreateTable(unittest.TestCase):
 				execute(statement)
 
 class TestInsertInto(unittest.TestCase):
-	# TODO: reset catalog before each test
 
 	def test(self):
 		execute('create table t (a integer, b string, c float, d boolean);')
@@ -95,7 +94,7 @@ class TestInsertInto(unittest.TestCase):
 
 	def test_should_raise_error_for_non_existing_table(self):
 		with self.assertRaisesRegex(KeyError, 'Table .* does not exist'):
-			execute('insert into r values ((123, \'hi\'));')
+			execute('insert into dne values ((123, \'hi\'));')
 
 	def test_should_raise_error_for_wrong_number_of_fields(self):
 		execute('create table t (a integer, b string);')
@@ -139,7 +138,32 @@ class TestInsertInto(unittest.TestCase):
 
 		self.assertEqual(list(catalog['t']), [(1, 'a'), (2, 'b')])
 
-	# TODO: use integer literal for floating point column
+class TestSelect(unittest.TestCase):
+
+	def test_select_all_columns(self):
+		execute('create table t (a integer not null, b string);')
+		execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+
+		cursor = execute('select * from t;')
+
+		self.assertEqual(list(cursor), [(1, 'a'), (2, 'b')])
+
+	def test_should_raise_error_if_table_does_not_exist(self):
+		with self.assertRaisesRegex(KeyError, 'dne'):
+			execute('select * from dne;')
+
+	# TODO: select column by name
+	# TODO: select column does not exist
+	# TODO: select column by fully qualified name
+	# table alias
+	# column alias
+	# select all vs select distinct
+	# order by asc, desc, nulls first, last
+
+
+# Insert into
+# TODO: use integer literal for floating point column
+# TODO: reset catalog before each test
 
 if __name__ == '__main__':
 	unittest.main()
