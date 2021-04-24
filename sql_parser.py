@@ -75,6 +75,10 @@ SelectNode = namedtuple('SelectNode', [
 	'select_expressions',
 	'table'
 ])
+ColumnReferenceNode = namedtuple('ColumnReferenceNode', [
+	'table_name',
+	'column_name'
+])
 
 def p_statement(p):
 	'''statement : insert_statement ';'
@@ -100,7 +104,16 @@ def p_statement(p):
 			table.rows = table.rows[:checkpoint_index]
 			raise e
 	elif statement_type == SelectNode:
-		p[0] = catalog[statement.table]
+		relation = catalog[statement.table]
+		expressions = []
+		for expression in statement.select_expressions:
+			if expression.column_name == '*':
+				for column in relation.columns:
+					expressions.append(db.Attribute(column))
+			else:
+				expressions.append(db.Attribute(
+					relation.get_column(expression.column_name)))
+		p[0] = db.GeneralizedProjection(relation, expressions)
 
 def p_create_table_statement(p):
 	'''create_table_statement : CREATE TABLE IDENTIFIER '(' column_list ')' '''
@@ -155,20 +168,20 @@ def p_values_list(p):
 	p[0] = p[1]
 
 def p_tuple_value(p):
-	'''tuple_value : '(' primative_list ')' '''
+	'''tuple_value : '(' primitive_list ')' '''
 	p[0] = p[2]
 
-def p_primative_list_base(p):
-	'''primative_list : primative'''
+def p_primitive_list_base(p):
+	'''primitive_list : primitive'''
 	p[0] = [p[1]]
 
-def p_primative_list(p):
-	'''primative_list : primative_list ',' primative'''
+def p_primitive_list(p):
+	'''primitive_list : primitive_list ',' primitive'''
 	p[1].append(p[3])
 	p[0] = p[1]
 
-def p_primative(p):
-	'''primative : FLOAT_LITERAL
+def p_primitive(p):
+	'''primitive : FLOAT_LITERAL
 				| INTEGER_LITERAL
 				| STRING_LITERAL
 				| NULL
@@ -184,8 +197,35 @@ def p_primative(p):
 		p[0] = p[1]
 
 def p_select_statement(p):
-	'''select_statement : SELECT '*' FROM IDENTIFIER'''
+	'''select_statement : SELECT select_expression_list FROM IDENTIFIER'''
 	p[0] = SelectNode(select_expressions=p[2], table=p[4])
+
+def p_select_expression_list_base(p):
+	'''select_expression_list : select_expression'''
+	p[0] = [p[1]]
+
+def p_select_expression_list(p):
+	'''select_expression_list : select_expression_list ',' select_expression'''
+	p[1].append(p[3])
+	p[0] = p[1]
+
+def p_select_expression(p):
+	'''select_expression : wildcard
+						| column_reference'''
+	p[0] = p[1]
+
+def p_wildcard(p):
+	'''wildcard : '*' '''
+	# TODO: tablename.*
+	p[0] = ColumnReferenceNode(table_name=None, column_name='*')
+
+def p_column_reference(p):
+	'''column_reference : IDENTIFIER'''
+	p[0] = ColumnReferenceNode(table_name=None, column_name=p[1])
+
+def p_column_reference_fully_qualified(p):
+	'''column_reference : IDENTIFIER '.' IDENTIFIER'''
+	p[0] = ColumnReferenceNode(table_name=p[1], column_name=p[3])
 
 def p_error(p):
 	raise ValueError('Syntax error %r' % p)

@@ -141,7 +141,7 @@ class TestInsertInto(unittest.TestCase):
 class TestSelect(unittest.TestCase):
 
 	def test_select_all_columns(self):
-		execute('create table t (a integer not null, b string);')
+		execute('create table t (a integer, b string);')
 		execute('insert into t values ((1, \'a\'), (2, \'b\'));')
 
 		cursor = execute('select * from t;')
@@ -152,14 +152,27 @@ class TestSelect(unittest.TestCase):
 		with self.assertRaisesRegex(KeyError, 'dne'):
 			execute('select * from dne;')
 
-	# TODO: select column by name
-	# TODO: select column does not exist
+	def test_select_columns_by_name(self):
+		execute('create table t (a integer, b string, c float);')
+		execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+
+		cursor = execute('select a, c from t;')
+
+		self.assertEqual(list(cursor), [(1, 3.14), (2, 2.71)])
+
+	def test_should_raise_error_if_column_does_not_exist(self):
+		execute('create table t (a integer, b string, c float);')
+
+		with self.assertRaisesRegex(KeyError, 'dne'):
+			execute('select dne from t;')
+
 	# TODO: select column by fully qualified name
 	# table alias
+	#	alias has same name as table
+	#	alias defined multiple times
 	# column alias
 	# select all vs select distinct
 	# order by asc, desc, nulls first, last
-
 
 # Insert into
 # TODO: use integer literal for floating point column

@@ -40,6 +40,12 @@ class Relation:
 	def set_name(self, name):
 		self.name = name
 
+	def get_column(self, name):
+		for column in self.columns:
+			if column.name == name:
+				return column
+		raise KeyError('Table %r has no column %r' % (self.name, name))
+
 	def __iter__(self):
 		'Returns an iterator for iterating over all tuples in the relation'
 		raise NotImplemented
