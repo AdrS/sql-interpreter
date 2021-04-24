@@ -1,6 +1,7 @@
 import lex
 import yacc
 import db
+from collections import namedtuple
 
 # TODO(adrs): move into function closure or class
 
@@ -66,15 +67,34 @@ def SqlLexer():
 
 	return lex.lex()
 
+CreateTable = namedtuple('CreateTable', ['name', 'columns'])
+InsertInto = namedtuple('InsertInto', ['table_name', 'tuples'])
+
 def p_statement(p):
 	'''statement : insert_into ';'
 				| create_table ';' '''
+	statement = p[1]
+	statement_type = type(statement)
+	if statement_type == CreateTable:
+		name, columns = statement.name, statement.columns
+		catalog[name] = db.MaterialRelation(columns, name)
+	elif statement_type == InsertInto:
+		table_name, tuples = statement.table_name, statement.tuples
+		if table_name not in catalog:
+			raise KeyError('Table %r does not exist' % table_name)
+		table = catalog[table_name]
+		# TODO: move atomic insert logic into MaterialRelation
+		checkpoint_index = len(table.rows)
+		try:
+			for values in tuples:
+				table.insert(values)
+		except Exception as e:
+			table.rows = table.rows[:checkpoint_index]
+			raise e
 
 def p_create_table(p):
 	'''create_table : CREATE TABLE IDENTIFIER '(' column_list ')' '''
-	table_name = p[3]
-	columns = p[5]
-	catalog[table_name] = p[0] = db.MaterialRelation(columns, table_name)
+	p[0] = CreateTable(name=p[3], columns=p[5])
 
 def p_column_list_base(p):
 	'''column_list : column_definition'''
@@ -113,14 +133,7 @@ def p_nullable(p):
 
 def p_insert_into(p):
 	'''insert_into : INSERT INTO IDENTIFIER VALUES '(' values_list ')' '''
-	table_name = p[3]
-	values_list = p[6]
-	if table_name not in catalog:
-		raise KeyError('Table %r does not exist' % table_name)
-	table = catalog[table_name]
-	# TODO: make insert atomic
-	for values in values_list:
-		table.insert(values)
+	p[0] = InsertInto(table_name=p[3], tuples=p[6])
 
 def p_values_list_base(p):
 	'values_list : tuple_value'

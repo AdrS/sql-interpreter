@@ -84,13 +84,13 @@ class TestInsertInto(unittest.TestCase):
 	def test_should_raise_error_for_invalid_type(self):
 		execute('create table t (a integer, b string);')
 
-		with self.assertRaises(TypeError):
+		with self.assertRaisesRegex(TypeError, 'wrong type'):
 			execute('insert into t VALUES ((\'hi\', true));')
 
 	def test_should_raise_error_inserting_null_value_in_not_null_field(self):
 		execute('create table t (a integer not null, b string);')
 
-		with self.assertRaises(TypeError):
+		with self.assertRaisesRegex(TypeError, 'NULL value'):
 			execute('insert into t values ((null, \'hi\'));')
 
 	def test_should_raise_error_for_non_existing_table(self):
@@ -103,9 +103,43 @@ class TestInsertInto(unittest.TestCase):
 		with self.assertRaisesRegex(TypeError, 'number of columns'):
 			execute('insert into t values ((123, \'hi\', true));')
 
-	# TODO: test should not insert any tuples if any are invalid
+	def test_should_raise_error_for_invalid_syntax(self):
+		test_cases = [
+			('insert into t values (123, \'hi\', true);',
+			 'invalid tuple list'),
+			('into t values ((1,2), (3,4));',
+			 'missing insert'),
+			('insert t values ((1,2), (3,4));',
+			 'missing into'),
+			('insert into 123 values ((1,2), (3,4));',
+			 'invalid name'),
+			('insert into t value ((1,2), (3,4));',
+			 'missing values'),
+			('insert into t values ((1,2),));',
+			 'trailing comma invalid list'),
+			('insert into t values ((1,2) (3,4));',
+			 'missing comma'),
+			('insert into t values ((1,2), (3,4))',
+			 'missing semicolon'),
+			('insert into t values ((1,), (3,4));',
+			 'invalid tuple')
+		]
+		for command, msg in test_cases:
+			with self.assertRaisesRegex(ValueError, 'Syntax', msg=msg):
+				execute(command)
+
+	def test_insert_should_be_atomic(self):
+		execute('create table t (a integer not null, b string);')
+		execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+
+		# The valid tuple (3, 'c') should not be inserted because the other
+		# tuple (null, 'd') violates the not null constraint.
+		with self.assertRaisesRegex(TypeError, 'NULL value'):
+			execute('insert into t values ((3, \'c\'), (null, \'d\'));')
+
+		self.assertEqual(list(catalog['t']), [(1, 'a'), (2, 'b')])
+
 	# TODO: use integer literal for floating point column
-	# TODO: invalid value list e.g. insert into t values (1,2,3);
 
 if __name__ == '__main__':
 	unittest.main()
