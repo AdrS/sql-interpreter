@@ -180,6 +180,70 @@ class TestSelect(unittest.TestCase):
 		with self.assertRaisesRegex(KeyError, 'dne'):
 			db.execute('select dne from t;')
 
+	def test_select_constant(self):
+		db = Db()
+		db.execute('create table t (a integer, b string);')
+		db.execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+
+		cursor = db.execute('select 123, 3.14, \'hi\', true, null from t;')
+
+		# Number of tuples should equal number of tuples in input table
+		self.assertEqual(list(cursor), [
+			(123, 3.14, 'hi', True, None),
+			(123, 3.14, 'hi', True, None)
+		])
+
+	def test_select_expression_with_binary_operation(self):
+		db = Db()
+		db.execute('create table t (a integer);')
+		db.execute('insert into t values ((10), (15), (20));')
+
+		cursor = db.execute('''
+			select
+				a + 1,
+				a - 1,
+				a * 2,
+				a / 2,
+				a < 15,
+				a <= 15,
+				a = 15,
+				a <> 15,
+				a != 15,
+				a >= 15,
+				a > 15
+			from t;''')
+
+		# Number of tuples should equal number of tuples in input table
+		self.assertEqual(list(cursor), [
+			(11, 9, 20, 5, True, True, False, True, True, False, False),
+			(16, 14, 30, 7, False, True, True, False, False, True, False),
+			(21, 19, 40, 10, False, False, False, True, True, True, True)
+		])
+
+	def test_select_expression_with_and_or(self):
+		db = Db()
+		db.execute('create table t (a boolean);')
+		db.execute('insert into t values ((true), (false));')
+
+		cursor = db.execute('''
+			select
+				a AND true,
+				a AND false,
+				a OR true,
+				a OR false
+			from t;''')
+
+		# Number of tuples should equal number of tuples in input table
+		self.assertEqual(list(cursor), [
+			(True, False, True, True),
+			(False, False, True, False)
+		])
+
+	# TODO: unary minus, not, is null, is not null
+	# TODO: cast
+	# TODO: complex expression - precedence test
+		
+
 	# TODO: select column by fully qualified name
 	# table alias
 	#	alias has same name as table
@@ -187,6 +251,7 @@ class TestSelect(unittest.TestCase):
 	# column alias
 	# select all vs select distinct
 	# order by asc, desc, nulls first, last
+	# select without a "FROM" e.g. "select 123;"
 
 # Insert into
 # TODO: use integer literal for floating point column

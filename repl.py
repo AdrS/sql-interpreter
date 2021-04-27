@@ -5,6 +5,7 @@ from collections import namedtuple
 
 keywords = {
 	#w.lower() : w.upper() for w in
+	'and':'AND',
 	'boolean':'BOOLEAN',
 	'create':'CREATE',
 	'false':'FALSE',
@@ -15,6 +16,7 @@ keywords = {
 	'into':'INTO',
 	'not':'NOT',
 	'null':'NULL',
+	'or':'OR',
 	'select':'SELECT',
 	'string':'STRING',
 	'table':'TABLE',
@@ -27,10 +29,27 @@ tokens = (
 	'IDENTIFIER',
 	'INTEGER_LITERAL',
 	'STRING_LITERAL',
+	'LEQ',
+	'GEQ',
+	'NEQ',
 ) + tuple(keywords.values())
 
+precedence = (
+	('left', 'OR'),
+	('left', 'AND'),
+	('nonassoc', '<', '>', '=', 'LEQ', 'GEQ', 'NEQ'),
+	('left', '+', '-'),
+	('left', '*', '/')
+)
+
+# TODO: NOT and unary minus
+
 def SqlLexer():
-	literals = ['(', ')', ',', ';', '*']
+	literals = ['(', ')', ',', ';', '*', '+', '-', '*', '/', '<', '=', '>']
+
+	t_LEQ = r'<='
+	t_GEQ = r'>='
+	t_NEQ = r'(<>)|(!=)'
 
 	def t_COMMENT(t):
 		r'--[^\n]*\n'
@@ -65,17 +84,6 @@ def SqlLexer():
 
 	return lex.lex()
 
-CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
-InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
-SelectNode = namedtuple('SelectNode', [
-	'select_expressions',
-	'table'
-])
-ColumnReferenceNode = namedtuple('ColumnReferenceNode', [
-	'table_name',
-	'column_name'
-])
-
 def p_statement(p):
 	'''statement : insert_statement ';'
 				| create_table_statement ';'
@@ -96,19 +104,23 @@ def p_column_list(p):
 	p[1].append(p[3])
 	p[0] = p[1]
 
-def p_column_definition(p):
-	'''column_definition : IDENTIFIER BOOLEAN nullability_definition
-					| IDENTIFIER FLOAT nullability_definition
-					| IDENTIFIER INTEGER nullability_definition
-					| IDENTIFIER STRING nullability_definition'''
-	column_name = p[1]
+def p_primitive_type(p):
+	'''primitive_type : BOOLEAN
+						| FLOAT
+						| INTEGER
+						| STRING'''
 	types_by_name = {
 		'integer':int,
 		'float':float,
 		'boolean':bool,
 		'string':str,
 	}
-	column_type = types_by_name[p[2]]
+	p[0] = types_by_name[p[1]]
+
+def p_column_definition(p):
+	'''column_definition : IDENTIFIER primitive_type nullability_definition '''
+	column_name = p[1]
+	column_type = p[2]
 	nullability = p[3]
 	p[0] = relation.Column(column_name, column_type, nullability)
 
@@ -160,6 +172,10 @@ def p_primitive(p):
 	else:
 		p[0] = p[1]
 
+def p_expression_constant(p):
+	'''expression_constant : primitive'''
+	p[0] = ConstantNode(p[1])
+
 def p_select_statement(p):
 	'''select_statement : SELECT select_expression_list FROM IDENTIFIER'''
 	p[0] = SelectNode(select_expressions=p[2], table=p[4])
@@ -175,13 +191,47 @@ def p_select_expression_list(p):
 
 def p_select_expression(p):
 	'''select_expression : wildcard
-						| column_reference'''
+						| expression'''
 	p[0] = p[1]
 
 def p_wildcard(p):
 	'''wildcard : '*' '''
 	# TODO: tablename.*
 	p[0] = ColumnReferenceNode(table_name=None, column_name='*')
+
+def p_expression(p):
+	'''expression : expression_constant
+					| column_reference
+					| '(' expression ')'
+	'''
+	if p[1] == '(':
+		p[0] = p[2]
+	else:
+		p[0] = p[1]
+
+	# | '-' expression
+	# | NOT expression
+	# TODO: IS NULL, IS NOT NULL
+
+def p_expression_binary_operator(p):
+	'''expression :   expression '+' expression
+					| expression '-' expression
+					| expression '*' expression
+					| expression '/' expression
+					| expression '<' expression
+					| expression LEQ expression
+					| expression '=' expression
+					| expression NEQ expression
+					| expression GEQ expression
+					| expression '>' expression
+					| expression AND expression
+					| expression OR expression
+	'''
+	p[0] = BinaryOperationNode(p[2], p[1], p[3])
+
+# def p_expression_unary_operator(p):
+# 	'''expression : NOT expression
+# 					| '-' expression'''
 
 def p_column_reference(p):
 	'''column_reference : IDENTIFIER'''
@@ -200,6 +250,71 @@ def p_error(p):
 
 lexer = SqlLexer()
 parser = yacc.yacc()
+
+class AstNode:
+	def compile(self, **kwargs):
+		raise NotImplemented
+
+class ExpressionNode(AstNode):
+	def compile(self, table, used_columns):
+		'''
+		Updates used columns to include all columns referenced by the
+		expression.
+		'''
+		raise NotImplemented
+
+class ConstantNode(ExpressionNode):
+	def __init__(self, value):
+		self.value = value
+
+	def compile(self, table):
+		return relation.Constant(self.value)
+
+class ColumnReferenceNode(ExpressionNode):
+	def __init__(self, table_name, column_name):
+		self.table_name = table_name
+		self.column_name = column_name
+
+	def is_wildcard(self):
+		return self.column_name == '*'
+
+	def expand_wildcard(self, table):
+		columns = []
+		for column in table.columns:
+			columns.append(ColumnReferenceNode(self.table_name, column.name))
+		return columns
+
+	def compile(self, table):
+		# TODO: handle *
+		# TODO: support expressions referencing multiple tables
+		return relation.Attribute(table.get_column(self.column_name))
+
+class BinaryOperationNode(ExpressionNode):
+	def __init__(self, op, lhs, rhs):
+		self.op = op
+		self.lhs = lhs
+		self.rhs = rhs
+
+	def compile(self, table):
+		lhs = self.lhs.compile(table)
+		rhs = self.rhs.compile(table)
+		if self.op == 'and':
+			return relation.And(lhs, rhs)
+		if self.op == 'or':
+			return relation.Or(lhs, rhs)
+		if self.op in ['<', '<=', '<>', '!=', '=', '>=', '>']:
+			return relation.Comparison(self.op, lhs, rhs)
+		if self.op in ['+', '-', '*', '/']:
+			return relation.Arithmetic(self.op, lhs, rhs)
+		raise ValueError('Unknown binary operator %r' % self.op)
+
+CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
+InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
+SelectNode = namedtuple('SelectNode', [
+	'select_expressions',
+	'table'
+])
+
 
 class Db:
 	def __init__(self):
@@ -224,15 +339,18 @@ class Db:
 			raise e
 
 	def __execute_select(self, node):
+		# TODO: move into SelectNode.compile
 		table = self.catalog[node.table]
-		expressions = []
+		select_expressions = []
 		for expression in node.select_expressions:
-			if expression.column_name == '*':
-				for column in table.columns:
-					expressions.append(relation.Attribute(column))
+			if (type(expression) == ColumnReferenceNode and
+				expression.is_wildcard()):
+				select_expressions.extend(expression.expand_wildcard(table))
 			else:
-				expressions.append(relation.Attribute(
-					table.get_column(expression.column_name)))
+				select_expressions.append(expression)
+			
+		expressions = [
+			expression.compile(table) for expression in select_expressions]
 		return relation.GeneralizedProjection(table, expressions)
 
 	def execute(self, sql_command):
