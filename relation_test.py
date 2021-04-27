@@ -152,6 +152,10 @@ class TestComparison(unittest.TestCase):
 			('<>', 2, 2, False),
 			('<>', 2, 1, True),
 
+			('!=', 1, 2, True),
+			('!=', 2, 2, False),
+			('!=', 2, 1, True),
+
 			('<', 1.1, 2.2, True),
 			('<', 2.2, 2.2, False),
 			('<', 2.2, 1.1, False),
@@ -175,6 +179,10 @@ class TestComparison(unittest.TestCase):
 			('<>', 1.1, 2.2, True),
 			('<>', 2.2, 2.2, False),
 			('<>', 2.2, 1.1, True),
+
+			('!=', 1.1, 2.2, True),
+			('!=', 2.2, 2.2, False),
+			('!=', 2.2, 1.1, True),
 
 			('<', False, True, True),
 			('<', True, True, False),
@@ -200,6 +208,10 @@ class TestComparison(unittest.TestCase):
 			('<>', True, True, False),
 			('<>', True, False, True),
 
+			('!=', False, True, True),
+			('!=', True, True, False),
+			('!=', True, False, True),
+
 			('<', 'Alice', 'Bob', True),
 			('<', 'Bob', 'Bob', False),
 			('<', 'Bob', 'Alice', False),
@@ -223,6 +235,10 @@ class TestComparison(unittest.TestCase):
 			('<>', 'Alice', 'Bob', True),
 			('<>', 'Bob', 'Bob', False),
 			('<>', 'Bob', 'Alice', True),
+
+			('!=', 'Alice', 'Bob', True),
+			('!=', 'Bob', 'Bob', False),
+			('!=', 'Bob', 'Alice', True),
 		]
 		for op, lhs, rhs, expected_result in cases:
 			expr = Comparison(op, Constant(lhs), Constant(rhs))
@@ -241,6 +257,7 @@ class TestComparison(unittest.TestCase):
 			('<', None, 'hello', str),
 			('=', None, False, bool),
 			('<>', None, None, int),
+			('!=', None, None, int),
 			# Note: NULL <> NULL
 			('=', None, None, int),
 		]

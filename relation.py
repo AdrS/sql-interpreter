@@ -248,6 +248,7 @@ class Comparison(BinaryOperation):
 		'>=': lambda a, b: a >= b,
 		'>': lambda a, b: a > b,
 		'<>': lambda a, b: a != b,
+		'!=': lambda a, b: a != b,
 	}
 	def __init__(self, op, lhs, rhs):
 		super().__init__(lhs, rhs)
