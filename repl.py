@@ -14,6 +14,7 @@ keywords = {
 	'insert':'INSERT',
 	'integer':'INTEGER',
 	'into':'INTO',
+	'is':'IS',
 	'not':'NOT',
 	'null':'NULL',
 	'or':'OR',
@@ -42,8 +43,6 @@ precedence = (
 	('left', '+', '-'),
 	('left', '*', '/')
 )
-
-# TODO: NOT and unary minus
 
 def SqlLexer():
 	literals = ['(', ')', ',', ';', '*', '+', '-', '*', '/', '<', '=', '>']
@@ -218,10 +217,6 @@ def p_expression(p):
 	else:
 		p[0] = p[1]
 
-	# | '-' expression
-	# | NOT expression
-	# TODO: IS NULL, IS NOT NULL
-
 def p_expression_binary_operator(p):
 	'''expression :   expression '+' expression
 					| expression '-' expression
@@ -238,9 +233,18 @@ def p_expression_binary_operator(p):
 	'''
 	p[0] = BinaryOperationNode(p[2], p[1], p[3])
 
-# def p_expression_unary_operator(p):
-# 	'''expression : NOT expression
-# 					| '-' expression'''
+def p_expression_unary_prefix_operator(p):
+	'''expression : NOT expression
+					| '-' expression'''
+	p[0] = UnaryOperationNode(p[1], p[2])
+
+def p_expression_unary_postfix_operator(p):
+	'''expression : expression IS NULL
+					| expression IS NOT NULL'''
+	if p[3] == 'null':
+		p[0] = UnaryOperationNode('is null', p[1])
+	else:
+		p[0] = UnaryOperationNode('is not null', p[1])
 
 def p_column_reference(p):
 	'''column_reference : IDENTIFIER'''
@@ -294,7 +298,6 @@ class ColumnReferenceNode(ExpressionNode):
 		return columns
 
 	def compile(self, table):
-		# TODO: handle *
 		# TODO: support expressions referencing multiple tables
 		return relation.Attribute(table.get_column(self.column_name))
 
@@ -316,6 +319,23 @@ class BinaryOperationNode(ExpressionNode):
 		if self.op in ['+', '-', '*', '/']:
 			return relation.Arithmetic(self.op, lhs, rhs)
 		raise ValueError('Unknown binary operator %r' % self.op)
+
+class UnaryOperationNode(ExpressionNode):
+	def __init__(self, op, operand):
+		self.op = op
+		self.operand = operand
+
+	def compile(self, table):
+		operand = self.operand.compile(table)
+		if self.op == '-':
+			return relation.UnaryMinus(operand)
+		if self.op == 'not':
+			return relation.LogicalNot(operand)
+		if self.op == 'is null':
+			return relation.IsNull(operand)
+		if self.op == 'is not null':
+			return relation.IsNotNull(operand)
+		raise ValueError('Unknown unary operator %r' % self.op)
 
 CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])

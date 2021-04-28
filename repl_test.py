@@ -239,9 +239,38 @@ class TestSelect(unittest.TestCase):
 			(False, False, True, False)
 		])
 
-	# TODO: unary minus, not, is null, is not null
+	def test_select_expression_unary_minus(self):
+		db = Db()
+		db.execute('create table t (a integer);')
+		db.execute('insert into t values ((10), (15), (20));')
+
+		cursor = db.execute('''select -a from t;''')
+
+		self.assertEqual(list(cursor), [ (-10,), (-15,), (-20,) ])
+
+	def test_select_expression_logical_not(self):
+		db = Db()
+		db.execute('create table t (a boolean);')
+		db.execute('insert into t values ((true), (false));')
+
+		cursor = db.execute('''select not a from t;''')
+
+		self.assertEqual(list(cursor), [(False,), (True,)])
+
+	def test_select_expression_is_null(self):
+		db = Db()
+		db.execute('create table t (a integer);')
+		db.execute('insert into t values ((10), (null));')
+
+		cursor = db.execute('''select a is null, a is not null from t;''')
+
+		self.assertEqual(list(cursor), [(False, True), (True, False)])
+
 	# TODO: cast
 	# TODO: complex expression - precedence test
+	# TODO: invalid expressions
+	# 	- missing operator, missing operand
+	#	- incorrect types
 		
 	def test_where_clause(self):
 		db = Db()
