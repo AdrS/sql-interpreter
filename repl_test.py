@@ -243,6 +243,32 @@ class TestSelect(unittest.TestCase):
 	# TODO: cast
 	# TODO: complex expression - precedence test
 		
+	def test_where_clause(self):
+		db = Db()
+		db.execute('create table t (a integer, b string);')
+		db.execute('''insert into t values (
+			(123, \'hi\'),
+			(456, \'bye\'),
+			(789, \'hi\')
+			);''')
+
+		cursor = db.execute('select a from t where b = \'hi\';')
+
+		# Number of tuples should equal number of tuples in input table
+		self.assertEqual(list(cursor), [
+			(123,), (789,)
+		])
+
+	def test_should_raise_error_for_where_clause_missing_predicate(self):
+		db = Db()
+		with self.assertRaisesRegex(ValueError, 'Syntax'):
+			db.execute('select a from t where ;')
+
+	def test_should_raise_error_for_non_boolean_where_expression(self):
+		db = Db()
+		db.execute('create table t (a integer, b string);')
+		with self.assertRaisesRegex(TypeError, 'must be a boolean'):
+			db.execute('select a from t where 123;')
 
 	# TODO: select column by fully qualified name
 	# table alias

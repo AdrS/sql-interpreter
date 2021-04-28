@@ -21,7 +21,8 @@ keywords = {
 	'string':'STRING',
 	'table':'TABLE',
 	'true':'TRUE',
-	'values':'VALUES'
+	'values':'VALUES',
+	'where':'WHERE'
 }
 
 tokens = (
@@ -177,8 +178,8 @@ def p_expression_constant(p):
 	p[0] = ConstantNode(p[1])
 
 def p_select_statement(p):
-	'''select_statement : SELECT select_expression_list FROM IDENTIFIER'''
-	p[0] = SelectNode(select_expressions=p[2], table=p[4])
+	'''select_statement : SELECT select_expression_list FROM IDENTIFIER where_clause'''
+	p[0] = SelectNode(select_expressions=p[2], table=p[4], where_predicate=p[5])
 
 def p_select_expression_list_base(p):
 	'''select_expression_list : select_expression'''
@@ -193,6 +194,14 @@ def p_select_expression(p):
 	'''select_expression : wildcard
 						| expression'''
 	p[0] = p[1]
+
+def p_where_clause_missing(p):
+	'''where_clause : empty'''
+	p[0] = None
+
+def p_where_clause(p):
+	'''where_clause : WHERE expression'''
+	p[0] = p[2]
 
 def p_wildcard(p):
 	'''wildcard : '*' '''
@@ -312,7 +321,8 @@ CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
 SelectNode = namedtuple('SelectNode', [
 	'select_expressions',
-	'table'
+	'table',
+	'where_predicate'
 ])
 
 
@@ -341,6 +351,10 @@ class Db:
 	def __execute_select(self, node):
 		# TODO: move into SelectNode.compile
 		table = self.catalog[node.table]
+		output_relation = table
+		if node.where_predicate:
+			output_relation = relation.Selection(output_relation,
+										node.where_predicate.compile(table))
 		select_expressions = []
 		for expression in node.select_expressions:
 			if (type(expression) == ColumnReferenceNode and
@@ -348,10 +362,10 @@ class Db:
 				select_expressions.extend(expression.expand_wildcard(table))
 			else:
 				select_expressions.append(expression)
-			
+
 		expressions = [
 			expression.compile(table) for expression in select_expressions]
-		return relation.GeneralizedProjection(table, expressions)
+		return relation.GeneralizedProjection(output_relation, expressions)
 
 	def execute(self, sql_command):
 		ast_root = parser.parse(sql_command, lexer=lexer)
