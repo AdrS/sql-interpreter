@@ -173,9 +173,10 @@ class Cast(Expression):
 		if isinstance(self.op, TypeError):
 			raise self.op
 		self.expression = expression
+		self.target_type = target_type
 
 	def value_type(self):
-		return target_type
+		return self.target_type
 
 	def nullable(self):
 		return self.expression.nullable()

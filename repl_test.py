@@ -266,7 +266,58 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(False, True), (True, False)])
 
-	# TODO: cast
+	def test_cast_from_boolean(self):
+		db = Db()
+		db.execute('create table t (a boolean);')
+		db.execute('insert into t values ((true), (false));')
+
+		cursor = db.execute(
+					'select cast(a as integer), cast(a as string) from t;')
+
+		self.assertEqual(list(cursor), [(1, 'true'), (0, 'false')])
+
+	def test_should_raise_error_casting_boolean_to_float(self):
+		db = Db()
+		db.execute('create table t (a boolean);')
+		db.execute('insert into t values ((true), (false));')
+
+		with self.assertRaisesRegex(TypeError, 'cast'):
+			cursor = db.execute('select cast(a as float) from t;')
+
+	def test_cast_from_integer(self):
+		db = Db()
+		db.execute('create table t (a integer);')
+		db.execute('insert into t values ((0), (10));')
+
+		cursor = db.execute('''select
+									cast(a as boolean),
+									cast(a as float),
+									cast(a as string)
+								from t;''')
+
+		self.assertEqual(list(cursor), [(False, 0.0, '0'), (True, 10.0, '10')])
+
+	def test_cast_from_float(self):
+		db = Db()
+		db.execute('create table t (a float);')
+		db.execute('insert into t values ((3.14));')
+
+		cursor = db.execute('''select
+									cast(a as integer),
+									cast(a as string)
+								from t;''')
+
+		self.assertEqual(list(cursor), [(3, '3.14')])
+
+	def test_should_raise_error_casting_float_to_boolean(self):
+		db = Db()
+		db.execute('create table t (a float);')
+		db.execute('insert into t values ((3.14));')
+
+		with self.assertRaisesRegex(TypeError, 'cast'):
+			cursor = db.execute('select cast(a as boolean) from t;')
+	# TODO: cast from string
+
 	# TODO: complex expression - precedence test
 	# TODO: invalid expressions
 	# 	- missing operator, missing operand

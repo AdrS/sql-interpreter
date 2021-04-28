@@ -6,7 +6,9 @@ from collections import namedtuple
 keywords = {
 	#w.lower() : w.upper() for w in
 	'and':'AND',
+	'as':'AS',
 	'boolean':'BOOLEAN',
+	'cast':'CAST',
 	'create':'CREATE',
 	'false':'FALSE',
 	'float':'FLOAT',
@@ -246,6 +248,10 @@ def p_expression_unary_postfix_operator(p):
 	else:
 		p[0] = UnaryOperationNode('is not null', p[1])
 
+def p_expression_cast(p):
+	'''expression : CAST '(' expression AS primitive_type ')' '''
+	p[0] = CastNode(p[3], p[5])
+
 def p_column_reference(p):
 	'''column_reference : IDENTIFIER'''
 	p[0] = ColumnReferenceNode(table_name=None, column_name=p[1])
@@ -336,6 +342,14 @@ class UnaryOperationNode(ExpressionNode):
 		if self.op == 'is not null':
 			return relation.IsNotNull(operand)
 		raise ValueError('Unknown unary operator %r' % self.op)
+
+class CastNode(ExpressionNode):
+	def __init__(self, expression, target_type):
+		self.expression = expression
+		self.target_type = target_type
+
+	def compile(self, table):
+		return relation.Cast(self.expression.compile(table), self.target_type)
 
 CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
