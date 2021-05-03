@@ -47,7 +47,7 @@ precedence = (
 )
 
 def SqlLexer():
-	literals = ['(', ')', ',', ';', '*', '+', '-', '*', '/', '<', '=', '>']
+	literals = ['(', ')', ',', ';', '.', '*', '+', '-', '*', '/', '<', '=', '>']
 
 	t_LEQ = r'<='
 	t_GEQ = r'>='
@@ -179,7 +179,7 @@ def p_expression_constant(p):
 	p[0] = ConstantNode(p[1])
 
 def p_select_statement(p):
-	'''select_statement : SELECT select_expression_list FROM IDENTIFIER where_clause'''
+	'''select_statement : SELECT select_expression_list FROM table_expression where_clause'''
 	p[0] = SelectNode(select_expressions=p[2], table=p[4], where_predicate=p[5])
 
 def p_select_expression_list_base(p):
@@ -195,6 +195,18 @@ def p_select_expression(p):
 	'''select_expression : wildcard
 						| expression'''
 	p[0] = p[1]
+
+def p_table_expression_name(p):
+	'''table_expression : IDENTIFIER'''
+	p[0] = SelectTableNode(table=p[1], alias=None)
+
+def p_table_expression_short_alias(p):
+	'''table_expression : IDENTIFIER IDENTIFIER'''
+	p[0] = SelectTableNode(table=p[1], alias=p[2])
+
+def p_table_expression_alias(p):
+	'''table_expression : IDENTIFIER AS IDENTIFIER'''
+	p[0] = SelectTableNode(table=p[1], alias=p[3])
 
 def p_where_clause_missing(p):
 	'''where_clause : empty'''
@@ -275,7 +287,7 @@ class AstNode:
 		raise NotImplemented
 
 class ExpressionNode(AstNode):
-	def compile(self, table, used_columns):
+	def compile(self, env, used_columns):
 		'''
 		Updates used columns to include all columns referenced by the
 		expression.
@@ -286,7 +298,7 @@ class ConstantNode(ExpressionNode):
 	def __init__(self, value):
 		self.value = value
 
-	def compile(self, table):
+	def compile(self, env):
 		return relation.Constant(self.value)
 
 class ColumnReferenceNode(ExpressionNode):
@@ -297,15 +309,28 @@ class ColumnReferenceNode(ExpressionNode):
 	def is_wildcard(self):
 		return self.column_name == '*'
 
-	def expand_wildcard(self, table):
+	def expand_wildcard(self, env):
 		columns = []
-		for column in table.columns:
-			columns.append(ColumnReferenceNode(self.table_name, column.name))
+		for table_name, table in env.items():
+			for column in table.columns:
+				columns.append(ColumnReferenceNode(table_name, column.name))
 		return columns
 
-	def compile(self, table):
-		# TODO: support expressions referencing multiple tables
-		return relation.Attribute(table.get_column(self.column_name))
+	def compile(self, env):
+		column = None
+		if self.table_name:
+			column = env[self.table_name].get_column(self.column_name)
+		if not self.table_name:
+			for table_name, table in env.items():
+				if not table.has_column(self.column_name):
+					continue
+				if column:
+					raise ValueError(
+							'Column name %r is ambiguous' % self.column_name)
+				column = table.get_column(self.column_name)
+		if not column:
+			raise KeyError('Column %r does not exist' % self.column_name)
+		return relation.Attribute(column)
 
 class BinaryOperationNode(ExpressionNode):
 	def __init__(self, op, lhs, rhs):
@@ -313,9 +338,9 @@ class BinaryOperationNode(ExpressionNode):
 		self.lhs = lhs
 		self.rhs = rhs
 
-	def compile(self, table):
-		lhs = self.lhs.compile(table)
-		rhs = self.rhs.compile(table)
+	def compile(self, env):
+		lhs = self.lhs.compile(env)
+		rhs = self.rhs.compile(env)
 		if self.op == 'and':
 			return relation.And(lhs, rhs)
 		if self.op == 'or':
@@ -331,8 +356,8 @@ class UnaryOperationNode(ExpressionNode):
 		self.op = op
 		self.operand = operand
 
-	def compile(self, table):
-		operand = self.operand.compile(table)
+	def compile(self, env):
+		operand = self.operand.compile(env)
 		if self.op == '-':
 			return relation.UnaryMinus(operand)
 		if self.op == 'not':
@@ -348,17 +373,42 @@ class CastNode(ExpressionNode):
 		self.expression = expression
 		self.target_type = target_type
 
-	def compile(self, table):
-		return relation.Cast(self.expression.compile(table), self.target_type)
+	def compile(self, env):
+		return relation.Cast(self.expression.compile(env), self.target_type)
 
 CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
-SelectNode = namedtuple('SelectNode', [
-	'select_expressions',
-	'table',
-	'where_predicate'
-])
+SelectTableNode = namedtuple('SelectTableNode', ['table', 'alias'])
 
+class SelectNode:
+	def __init__(self, select_expressions, table, where_predicate):
+		self.select_expressions = select_expressions
+		self.table = table
+		self.where_predicate = where_predicate
+
+	def compile(self, catalog):
+		env = {}
+		if self.table.alias:
+			env[self.table.alias] = catalog[self.table.table]
+		else:
+			env[self.table.table] = catalog[self.table.table]
+
+		# TODO: do a join if there are multiple input tables
+		output_relation = catalog[self.table.table]
+		if self.where_predicate:
+			output_relation = relation.Selection(output_relation,
+										self.where_predicate.compile(env))
+		select_expressions = []
+		for expression in self.select_expressions:
+			if (type(expression) == ColumnReferenceNode and
+				expression.is_wildcard()):
+				select_expressions.extend(expression.expand_wildcard(env))
+			else:
+				select_expressions.append(expression)
+
+		expressions = [
+			expression.compile(env) for expression in select_expressions]
+		return relation.GeneralizedProjection(output_relation, expressions)
 
 class Db:
 	def __init__(self):
@@ -382,25 +432,6 @@ class Db:
 			table.rows = table.rows[:checkpoint_index]
 			raise e
 
-	def __execute_select(self, node):
-		# TODO: move into SelectNode.compile
-		table = self.catalog[node.table]
-		output_relation = table
-		if node.where_predicate:
-			output_relation = relation.Selection(output_relation,
-										node.where_predicate.compile(table))
-		select_expressions = []
-		for expression in node.select_expressions:
-			if (type(expression) == ColumnReferenceNode and
-				expression.is_wildcard()):
-				select_expressions.extend(expression.expand_wildcard(table))
-			else:
-				select_expressions.append(expression)
-
-		expressions = [
-			expression.compile(table) for expression in select_expressions]
-		return relation.GeneralizedProjection(output_relation, expressions)
-
 	def execute(self, sql_command):
 		ast_root = parser.parse(sql_command, lexer=lexer)
 		statement_type = type(ast_root)
@@ -409,7 +440,7 @@ class Db:
 		elif statement_type == InsertIntoNode:
 			self.__execute_insert(ast_root)
 		elif statement_type == SelectNode:
-			return self.__execute_select(ast_root)
+			return ast_root.compile(self.catalog)
 		else:
 			raise TypeError('Unknown AST node type')
 

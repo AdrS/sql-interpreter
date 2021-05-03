@@ -180,6 +180,40 @@ class TestSelect(unittest.TestCase):
 		with self.assertRaisesRegex(KeyError, 'dne'):
 			db.execute('select dne from t;')
 
+	def test_select_columns_by_full_name(self):
+		db = Db()
+		db.execute('create table t (a integer, b string, c float);')
+		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+
+		cursor = db.execute('select t.a, t.c from t;')
+
+		self.assertEqual(list(cursor), [(1, 3.14), (2, 2.71)])
+
+	def test_select_table_alias(self):
+		db = Db()
+		db.execute('create table t (a integer, b string, c float);')
+		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+
+		cursor = db.execute('select s.a, c from t as s;')
+
+		self.assertEqual(list(cursor), [(1, 3.14), (2, 2.71)])
+
+	def test_select_table_short_alias(self):
+		db = Db()
+		db.execute('create table t (a integer, b string, c float);')
+		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+
+		cursor = db.execute('select s.a, c from t s;')
+
+		self.assertEqual(list(cursor), [(1, 3.14), (2, 2.71)])
+
+	def test_select_should_raise_error_for_reference_to_original_table(self):
+		db = Db()
+		db.execute('create table t (a integer, b string, c float);')
+
+		with self.assertRaisesRegex(KeyError, 't'):
+			cursor = db.execute('select t.a from t as s;')
+
 	def test_select_constant(self):
 		db = Db()
 		db.execute('create table t (a integer, b string);')
