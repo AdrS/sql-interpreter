@@ -179,8 +179,8 @@ def p_expression_constant(p):
 	p[0] = ConstantNode(p[1])
 
 def p_select_statement(p):
-	'''select_statement : SELECT select_expression_list FROM table_expression where_clause'''
-	p[0] = SelectNode(select_expressions=p[2], table=p[4], where_predicate=p[5])
+	'''select_statement : SELECT select_expression_list FROM table_expressions where_clause'''
+	p[0] = SelectNode(select_expressions=p[2], tables=p[4], where_predicate=p[5])
 
 def p_select_expression_list_base(p):
 	'''select_expression_list : select_expression'''
@@ -194,6 +194,15 @@ def p_select_expression_list(p):
 def p_select_expression(p):
 	'''select_expression : wildcard
 						| expression'''
+	p[0] = p[1]
+
+def p_tables_expressions_base(p):
+	'''table_expressions : table_expression'''
+	p[0] = [p[1]]
+
+def p_tables_expressions(p):
+	'''table_expressions : table_expressions ',' table_expression'''
+	p[1].append(p[3])
 	p[0] = p[1]
 
 def p_table_expression_name(p):
@@ -311,26 +320,24 @@ class ColumnReferenceNode(ExpressionNode):
 
 	def expand_wildcard(self, env):
 		columns = []
-		for table_name, table in env.items():
-			for column in table.columns:
-				columns.append(ColumnReferenceNode(table_name, column.name))
+		for table_name, column in env:
+			columns.append(ColumnReferenceNode(table_name, column.name))
 		return columns
 
 	def compile(self, env):
-		column = None
-		if self.table_name:
-			column = env[self.table_name].get_column(self.column_name)
-		if not self.table_name:
-			for table_name, table in env.items():
-				if not table.has_column(self.column_name):
-					continue
-				if column:
-					raise ValueError(
-							'Column name %r is ambiguous' % self.column_name)
-				column = table.get_column(self.column_name)
-		if not column:
+		output_column = None
+		for table_name, column in env:
+			if column.name != self.column_name:
+				continue
+			if self.table_name and self.table_name != table_name:
+				continue
+			if output_column:
+				raise ValueError(
+						'Column name %r is ambiguous' % self.column_name)
+			output_column = column
+		if not output_column:
 			raise KeyError('Column %r does not exist' % self.column_name)
-		return relation.Attribute(column)
+		return relation.Attribute(output_column)
 
 class BinaryOperationNode(ExpressionNode):
 	def __init__(self, op, lhs, rhs):
@@ -381,20 +388,28 @@ InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
 SelectTableNode = namedtuple('SelectTableNode', ['table', 'alias'])
 
 class SelectNode:
-	def __init__(self, select_expressions, table, where_predicate):
+	def __init__(self, select_expressions, tables, where_predicate):
 		self.select_expressions = select_expressions
-		self.table = table
+		self.tables = tables
 		self.where_predicate = where_predicate
 
 	def compile(self, catalog):
-		env = {}
-		if self.table.alias:
-			env[self.table.alias] = catalog[self.table.table]
-		else:
-			env[self.table.table] = catalog[self.table.table]
+		# TODO: rename move to seperate method
+		env = []
+		table_names = set()
+		for table in self.tables:
+			table_name = table.alias or table.table
+			if table_name in table_names:
+				raise ValueError(
+					'Non-unique table name or alias %r' % table_name)
+			table_names.add(table_name)
+			for column in catalog[table.table].columns:
+				env.append((table_name, column.transform(new_index=len(env))))
 
-		# TODO: do a join if there are multiple input tables
-		output_relation = catalog[self.table.table]
+		output_relation = catalog[self.tables[0].table]
+		for table in self.tables[1:]:
+			output_relation = relation.CrossJoin(
+									output_relation, catalog[table.table])
 		if self.where_predicate:
 			output_relation = relation.Selection(output_relation,
 										self.where_predicate.compile(env))

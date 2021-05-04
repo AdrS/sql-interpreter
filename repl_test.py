@@ -384,10 +384,125 @@ class TestSelect(unittest.TestCase):
 		with self.assertRaisesRegex(TypeError, 'must be a boolean'):
 			db.execute('select a from t where 123;')
 
-	# TODO: select column by fully qualified name
-	# table alias
-	#	alias has same name as table
-	#	alias defined multiple times
+	def test_cross_join(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b integer);')
+		db.execute('insert into r values ((0), (10));')
+		db.execute('insert into s values ((1), (2));')
+
+		cursor = db.execute('select a, b from r, s;')
+
+		self.assertEqual(list(cursor), [(0, 1), (0, 2), (10, 1), (10, 2)])
+
+	def test_cross_join_wildcard(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b integer);')
+		db.execute('insert into r values ((0), (10));')
+		db.execute('insert into s values ((1), (2));')
+
+		cursor = db.execute('select * from r, s;')
+
+		self.assertEqual(list(cursor), [(0, 1), (0, 2), (10, 1), (10, 2)])
+
+	# TODO:
+	# def test_cross_join_with_table_wildcard(self):
+	# 	db = Db()
+	# 	db.execute('create table r (a integer);')
+	# 	db.execute('create table s (b integer, c integer);')
+	# 	db.execute('insert into r values ((0), (10));')
+	# 	db.execute('insert into s values ((1, 11), (2, 22);')
+
+	# 	cursor = db.execute('select a, s.* from r, s;')
+
+	# 	self.assertEqual(list(cursor), [
+	# 		(0, 1, 11), (0, 2, 22), (10, 1, 11), (10, 2, 22)])
+
+	def test_join_with_predicate(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b integer);')
+		db.execute('insert into r values ((0), (4), (10));')
+		db.execute('insert into s values ((1), (5));')
+
+		cursor = db.execute('select a, b from r, s where b > a;')
+
+		self.assertEqual(list(cursor), [(0, 1), (0, 5), (4, 5)])
+
+	def test_join_with_many_tables(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b boolean);')
+		db.execute('create table t (c string);')
+		db.execute('insert into r values ((0), (1));')
+		db.execute('insert into s values ((true), (false));')
+		db.execute('''insert into t values (('a'), ('b'));''')
+
+		cursor = db.execute('select a, b, c from r, s, t;')
+
+		self.assertEqual(list(cursor), [(0, True, 'a'), (0, True, 'b'),
+			(0, False, 'a'), (0, False, 'b'), (1, True, 'a'), (1, True, 'b'),
+			(1, False, 'a'), (1, False, 'b')])
+
+	def test_should_raise_error_for_abigous_column_name(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (a integer);')
+
+		with self.assertRaisesRegex(ValueError, 'ambiguous'):
+			db.execute('select a from r, s;')
+
+	def test_join_multiple_tables_with_same_column_name(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (a integer);')
+		db.execute('insert into r values ((0), (10));')
+		db.execute('insert into s values ((1), (2));')
+
+		cursor = db.execute('select r.a, s.a from r, s;')
+
+		self.assertEqual(list(cursor), [(0, 1), (0, 2), (10, 1), (10, 2)])
+
+	def test_should_raise_error_for_non_unique_table_name_and_alias(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b integer);')
+
+		with self.assertRaisesRegex(ValueError, 'Non-unique table name'):
+			db.execute('select * from r, s as r;')
+
+	def test_should_raise_error_for_non_unique_alias(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (b integer);')
+
+		with self.assertRaisesRegex(ValueError, 'Non-unique table name'):
+			db.execute('select * from r t, s as t;')
+
+	def test_table_alias_has_same_name_as_exisitng_table(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('create table s (a integer);')
+		db.execute('insert into r values ((0), (10));')
+		db.execute('insert into s values ((1), (2));')
+
+		cursor = db.execute('select s.a from r as s;')
+
+		self.assertEqual(list(cursor), [(0,), (10,)])
+
+	def test_join_table_with_self(self):
+		db = Db()
+		db.execute('create table r (a integer);')
+		db.execute('insert into r values ((1), (2));')
+
+		cursor = db.execute('select r.a, s.a from r, r as s;')
+
+		self.assertEqual(list(cursor), [(1, 1), (1, 2), (2, 1), (2, 2)])
+
+	# TODO:
+	# - table wildcard e.g. SELECT r.* FROM r, s
+	# TODO:
 	# column alias
 	# select all vs select distinct
 	# order by asc, desc, nulls first, last
