@@ -500,6 +500,73 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1, 1), (1, 2), (2, 1), (2, 2)])
 
+	def test_should_raise_error_for_select_with_nonaggregated_column(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+
+		# TODO: Improve the error message
+		with self.assertRaisesRegex(KeyError, 'a'):
+			db.execute('select a from t group by b;')
+
+	def test_group_by_no_aggregates(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+
+		cursor = db.execute('select a from t group by a;')
+
+		self.assertEqual(list(cursor), [(1,), (3,)])
+
+	def test_group_by_multiple_columns(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer, c integer);')
+		db.execute('''insert into t values (
+				(1, 11, 1),
+				(1, 11, 2),
+				(1, 11, 3),
+				(3, 31, 1),
+				(3, 32, 1),
+				(3, 32, 2)
+		);''')
+
+		cursor = db.execute('select a, b, a + b from t group by a, b;')
+
+		self.assertEqual(list(cursor), [(1,11, 12), (3,31, 34), (3,32, 35)])
+
+	def test_group_by_with_where_clause_referencing_group_by_column(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer, c integer);')
+		db.execute('''insert into t values (
+				(1, 11, 1),
+				(1, 11, 2),
+				(1, 11, 3),
+				(3, 31, 1),
+				(3, 32, 1),
+				(3, 32, 2)
+		);''')
+
+		cursor = db.execute('select b from t where a = 3 group by a, b;')
+
+		self.assertEqual(list(cursor), [(31,), (32,)])
+
+	def test_group_by_with_where_clause_referencing_non_aggregated_column(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+				(1, 1),
+				(1, 2),
+				(1, 3),
+				(2, 2),
+				(2, 4),
+				(3, 1),
+				(3, 1),
+				(3, 2)
+		);''')
+
+		cursor = db.execute('select a from t where b = 1 group by a;')
+
+		self.assertEqual(list(cursor), [(1,), (3,)])
+
 	# TODO:
 	# - table wildcard e.g. SELECT r.* FROM r, s
 	# TODO:

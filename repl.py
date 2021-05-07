@@ -8,11 +8,13 @@ keywords = {
 	'and':'AND',
 	'as':'AS',
 	'boolean':'BOOLEAN',
+	'by': 'BY',
 	'cast':'CAST',
 	'create':'CREATE',
 	'false':'FALSE',
 	'float':'FLOAT',
 	'from':'FROM',
+	'group':'GROUP',
 	'insert':'INSERT',
 	'integer':'INTEGER',
 	'into':'INTO',
@@ -179,8 +181,8 @@ def p_expression_constant(p):
 	p[0] = ConstantNode(p[1])
 
 def p_select_statement(p):
-	'''select_statement : SELECT select_expression_list FROM table_expressions where_clause'''
-	p[0] = SelectNode(select_expressions=p[2], tables=p[4], where_predicate=p[5])
+	'''select_statement : SELECT select_expression_list FROM table_expressions where_clause group_by_clause'''
+	p[0] = SelectNode(select_expressions=p[2], tables=p[4], where_predicate=p[5], group_by=p[6])
 
 def p_select_expression_list_base(p):
 	'''select_expression_list : select_expression'''
@@ -224,6 +226,14 @@ def p_where_clause_missing(p):
 def p_where_clause(p):
 	'''where_clause : WHERE expression'''
 	p[0] = p[2]
+
+def p_group_by_clause_missing(p):
+	'''group_by_clause : empty'''
+	p[0] = []
+
+def p_group_by_clause(p):
+	'''group_by_clause : GROUP BY column_reference_list'''
+	p[0] = p[3]
 
 def p_wildcard(p):
 	'''wildcard : '*' '''
@@ -280,6 +290,15 @@ def p_column_reference(p):
 def p_column_reference_fully_qualified(p):
 	'''column_reference : IDENTIFIER '.' IDENTIFIER'''
 	p[0] = ColumnReferenceNode(table_name=p[1], column_name=p[3])
+
+def p_column_reference_list_base(p):
+	'''column_reference_list : column_reference'''
+	p[0] = [p[1]]
+
+def p_column_reference_list(p):
+	'''column_reference_list : column_reference_list ',' column_reference'''
+	p[1].append(p[3])
+	p[0] = p[1]
 
 def p_empty(p):
 	'empty :'
@@ -388,27 +407,31 @@ class ColumnMappings:
 		self.columns.append((table_name,
 							column.transform(new_index=len(self.columns))))
 
-	def get_column(self, column_ref):
-		'Returns the referenced column from the environment.'
-		output_column = None
-		for table_name, column in self.columns:
+	def get_column_index(self, column_ref):
+		index = None
+		for i, (table_name, column) in enumerate(self.columns):
 			if column.name != column_ref.column_name:
 				continue
 			if column_ref.table_name and table_name != column_ref.table_name:
 				continue
-			if output_column:
+			if index != None:
 				raise ValueError(
 						'Column name %r is ambiguous' % column_ref.column_name)
-			output_column = column
-		if not output_column:
+			index = i
+		if index == None:
 			raise KeyError('Column %r does not exist' % column_ref.column_name)
-		return output_column
+		return index
+
+	def get_column(self, column_ref):
+		'Returns the referenced column from the environment.'
+		return self.columns[self.get_column_index(column_ref)][1]
 
 class SelectNode:
-	def __init__(self, select_expressions, tables, where_predicate):
+	def __init__(self, select_expressions, tables, where_predicate, group_by):
 		self.select_expressions = select_expressions
 		self.tables = tables
 		self.where_predicate = where_predicate
+		self.group_by = group_by
 
 	def compile_joins(self, catalog):
 		'''
@@ -439,6 +462,23 @@ class SelectNode:
 		return relation.Selection(input_relation,
 								self.where_predicate.compile(column_mappings))
 
+	def compile_group_by(self, input_relation, column_mappings):
+		if not self.group_by:
+			return input_relation, column_mappings
+
+		aggregates = []
+		grouping_columns = []
+		output_mappings = ColumnMappings()
+		for column_ref in self.group_by:
+			table_name, column = column_mappings.columns[
+								column_mappings.get_column_index(column_ref)]
+			grouping_columns.append(column)
+			output_mappings.add_column(table_name, column)
+
+		output_relation = relation.GroupBy(
+								input_relation, grouping_columns, aggregates)
+		return output_relation, output_mappings
+
 	def compile_generalized_projection(self, input_relation, column_mappings):
 		select_expressions = []
 		for expression in self.select_expressions:
@@ -455,8 +495,9 @@ class SelectNode:
 
 	def compile(self, catalog):
 		stage1, env1 = self.compile_joins(catalog)
-		stage2 = self.compile_selection(stage1, env1)
-		return self.compile_generalized_projection(stage2, env1)
+		stage2, env2 = self.compile_selection(stage1, env1), env1
+		stage3, env3 = self.compile_group_by(stage2, env2)
+		return self.compile_generalized_projection(stage3, env3)
 
 class Db:
 	def __init__(self):

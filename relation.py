@@ -423,10 +423,12 @@ class Sort(MaterialRelation):
 		self.relation = relation
 
 		if sort_key:
-			for column in sort_key:
-				if column not in relation.columns:
-					raise ValueError(
-					'Sort key %r is not a column of the relation' % column.name)
+			# TODO: Add input validation back. Previous validation failed when
+			# column reference was a transformed copy of the relation's column.
+			# for column in sort_key:
+			# 	if column not in relation.columns:
+			# 		raise ValueError(
+			# 		'Sort key %r is not a column of the relation' % column.name)
 			key = lambda row: [
 				row[column.index] for column in sort_key]
 			self.compare = lambda lhs, rhs:\
