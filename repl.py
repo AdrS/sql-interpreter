@@ -318,26 +318,14 @@ class ColumnReferenceNode(ExpressionNode):
 	def is_wildcard(self):
 		return self.column_name == '*'
 
-	def expand_wildcard(self, env):
+	def expand_wildcard(self, column_mappings):
 		columns = []
-		for table_name, column in env:
+		for table_name, column in column_mappings.columns:
 			columns.append(ColumnReferenceNode(table_name, column.name))
 		return columns
 
-	def compile(self, env):
-		output_column = None
-		for table_name, column in env:
-			if column.name != self.column_name:
-				continue
-			if self.table_name and self.table_name != table_name:
-				continue
-			if output_column:
-				raise ValueError(
-						'Column name %r is ambiguous' % self.column_name)
-			output_column = column
-		if not output_column:
-			raise KeyError('Column %r does not exist' % self.column_name)
-		return relation.Attribute(output_column)
+	def compile(self, column_mappings):
+		return relation.Attribute(column_mappings.get_column(self))
 
 class BinaryOperationNode(ExpressionNode):
 	def __init__(self, op, lhs, rhs):
@@ -387,15 +375,47 @@ CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
 SelectTableNode = namedtuple('SelectTableNode', ['table', 'alias'])
 
+class ColumnMappings:
+	'Maps columns from source tables to columns in the output table'
+	def __init__(self):
+		self.columns = []
+
+	def add_column(self, table_name, column):
+		'''
+		Adds a mapping from the column in the source table to the index of the
+		column in the environment index.
+		'''
+		self.columns.append((table_name,
+							column.transform(new_index=len(self.columns))))
+
+	def get_column(self, column_ref):
+		'Returns the referenced column from the environment.'
+		output_column = None
+		for table_name, column in self.columns:
+			if column.name != column_ref.column_name:
+				continue
+			if column_ref.table_name and table_name != column_ref.table_name:
+				continue
+			if output_column:
+				raise ValueError(
+						'Column name %r is ambiguous' % column_ref.column_name)
+			output_column = column
+		if not output_column:
+			raise KeyError('Column %r does not exist' % column_ref.column_name)
+		return output_column
+
 class SelectNode:
 	def __init__(self, select_expressions, tables, where_predicate):
 		self.select_expressions = select_expressions
 		self.tables = tables
 		self.where_predicate = where_predicate
 
-	def compile(self, catalog):
-		# TODO: rename move to seperate method
-		env = []
+	def compile_joins(self, catalog):
+		'''
+		Returns the result of cross joining all input tables and the mapping of
+		source columns to output columns.
+		'''
+		column_mappings = ColumnMappings()
 		table_names = set()
 		for table in self.tables:
 			table_name = table.alias or table.table
@@ -404,26 +424,39 @@ class SelectNode:
 					'Non-unique table name or alias %r' % table_name)
 			table_names.add(table_name)
 			for column in catalog[table.table].columns:
-				env.append((table_name, column.transform(new_index=len(env))))
+				column_mappings.add_column(table_name, column)
 
+		# Joins
 		output_relation = catalog[self.tables[0].table]
 		for table in self.tables[1:]:
 			output_relation = relation.CrossJoin(
 									output_relation, catalog[table.table])
-		if self.where_predicate:
-			output_relation = relation.Selection(output_relation,
-										self.where_predicate.compile(env))
+		return output_relation, column_mappings
+
+	def compile_selection(self, input_relation, column_mappings):
+		if not self.where_predicate:
+			return input_relation
+		return relation.Selection(input_relation,
+								self.where_predicate.compile(column_mappings))
+
+	def compile_generalized_projection(self, input_relation, column_mappings):
 		select_expressions = []
 		for expression in self.select_expressions:
 			if (type(expression) == ColumnReferenceNode and
 				expression.is_wildcard()):
-				select_expressions.extend(expression.expand_wildcard(env))
+				select_expressions.extend(
+					expression.expand_wildcard(column_mappings))
 			else:
 				select_expressions.append(expression)
 
-		expressions = [
-			expression.compile(env) for expression in select_expressions]
-		return relation.GeneralizedProjection(output_relation, expressions)
+		expressions = [expression.compile(column_mappings) for
+						expression in select_expressions]
+		return relation.GeneralizedProjection(input_relation, expressions)
+
+	def compile(self, catalog):
+		stage1, env1 = self.compile_joins(catalog)
+		stage2 = self.compile_selection(stage1, env1)
+		return self.compile_generalized_projection(stage2, env1)
 
 class Db:
 	def __init__(self):
