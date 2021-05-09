@@ -638,6 +638,115 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1, 20), (3, 30)])
 
+class TestUnion(unittest.TestCase):
+
+	def test_union_removes_duplicates_by_default(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute('select a from t union select b from t;')
+
+		self.assertEqual(list(cursor), [(1, ), (2,), (3,)])
+
+	def test_union_all(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute('select a from t union all select b from t;')
+
+		self.assertEqual(list(cursor), [(1,), (1,), (1,), (2,), (3,), (3,)])
+
+	def test_union_distinct(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute('select a from t union distinct select b from t;')
+
+		self.assertEqual(list(cursor), [(1, ), (2,), (3,)])
+
+	def test_multiple_unions(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+		db.execute('create table s (c integer);')
+		db.execute('insert into s values ((1), (4));')
+
+		cursor = db.execute('''select a from t union
+			select b from t union select c from s;''')
+
+		self.assertEqual(list(cursor), [(1, ), (2,), (3,), (4,)])
+
+class TestIntersect(unittest.TestCase):
+
+	def test_intersect_removes_duplicates_by_default(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute('select a from t intersect select b from t;')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_intersect_all(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute('select a from t intersect all select b from t;')
+
+		self.assertEqual(list(cursor), [(1,), (1,), (1,)])
+
+	def test_intersect_distinct(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (1, 3), (2, 3));''')
+
+		cursor = db.execute(
+					'select a from t intersect distinct select b from t;')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_multiple_intersections(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 1), (2, 2), (1, 3), (2, 3));''')
+		db.execute('create table s (c integer);')
+		db.execute('insert into s values ((1), (4));')
+
+		cursor = db.execute('''select a from t intersect
+			select b from t intersect select c from s;''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_intersect_has_higher_precedence_than_union(self):
+		# {1} intersect ({1} union {2}) = {1}
+		# ({1} intersect {1}) union {2} = {1, 2}
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1),
+			('b', 1),
+			('c', 2));''')
+
+		cursor = db.execute('''select v from t where s = 'a' intersect
+			select v from t where s = 'b' union
+			select v from t where s = 'c';''')
+
+		self.assertEqual(list(cursor), [(1,), (2,)])
+
+	# TODO: precedence of union vs intersect vs except
+
 	# TODO:
 	# - table wildcard e.g. SELECT r.* FROM r, s
 	# TODO:

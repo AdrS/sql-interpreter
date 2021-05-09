@@ -5,18 +5,21 @@ from collections import namedtuple
 
 keywords = {
 	#w.lower() : w.upper() for w in
+	'all':'ALL',
 	'and':'AND',
 	'as':'AS',
 	'boolean':'BOOLEAN',
 	'by': 'BY',
 	'cast':'CAST',
 	'create':'CREATE',
+	'distinct':'DISTINCT',
 	'false':'FALSE',
 	'float':'FLOAT',
 	'from':'FROM',
 	'group':'GROUP',
 	'insert':'INSERT',
 	'integer':'INTEGER',
+	'intersect':'INTERSECT',
 	'into':'INTO',
 	'is':'IS',
 	'not':'NOT',
@@ -26,6 +29,7 @@ keywords = {
 	'string':'STRING',
 	'table':'TABLE',
 	'true':'TRUE',
+	'union':'UNION',
 	'values':'VALUES',
 	'where':'WHERE'
 }
@@ -41,6 +45,8 @@ tokens = (
 ) + tuple(keywords.values())
 
 precedence = (
+	('left', 'UNION'), # except has same precdence
+	('left', 'INTERSECT'),
 	('left', 'OR'),
 	('left', 'AND'),
 	('nonassoc', '<', '>', '=', 'LEQ', 'GEQ', 'NEQ'),
@@ -91,7 +97,7 @@ def SqlLexer():
 def p_statement(p):
 	'''statement : insert_statement ';'
 				| create_table_statement ';'
-				| select_statement ';'
+				| query_statement ';'
 	'''
 	p[0] = p[1]
 
@@ -180,6 +186,29 @@ def p_expression_constant(p):
 	'''expression_constant : primitive'''
 	p[0] = ConstantNode(p[1])
 
+def p_query_statement(p):
+	'query_statement : select_statement'
+	p[0] = p[1]
+
+def p_distinctness(p):
+	'''distinctness : empty
+				| ALL
+				| DISTINCT'''
+	if p[1] == 'all':
+		p[0] = 'all'
+	elif p[1] == 'distinct':
+		p[0] = 'distinct'
+	else:
+		p[0] = None
+
+def p_query_statement_set_op(p):
+	'''query_statement : query_statement UNION distinctness query_statement
+					| query_statement INTERSECT distinctness query_statement
+	'''
+	op = p[2]
+	distinct = p[3] != 'all'
+	p[0] = SetOperatorNode(op, p[1], p[4], distinct)
+
 def p_select_statement(p):
 	'''select_statement : SELECT select_expression_list FROM table_expressions where_clause group_by_clause'''
 	p[0] = SelectNode(select_expressions=p[2], tables=p[4], where_predicate=p[5], group_by=p[6])
@@ -218,6 +247,8 @@ def p_table_expression_short_alias(p):
 def p_table_expression_alias(p):
 	'''table_expression : IDENTIFIER AS IDENTIFIER'''
 	p[0] = SelectTableNode(table=p[1], alias=p[3])
+
+# TODO: subqueries as tables
 
 def p_where_clause_missing(p):
 	'''where_clause : empty'''
@@ -561,6 +592,21 @@ class SelectNode:
 		stage3, env3 = self.compile_group_by(stage2, env2)
 		return self.compile_generalized_projection(stage3, env3)
 
+class SetOperatorNode:
+	operations = {
+		'union':relation.Union,
+		'intersect':relation.Intersection
+	}
+	def __init__(self, op, lhs, rhs, distinct):
+		self.op = SetOperatorNode.operations[op]
+		self.lhs = lhs
+		self.rhs = rhs
+		self.distinct = distinct
+
+	def compile(self, catalog):
+		return self.op(self.lhs.compile(catalog),
+					self.rhs.compile(catalog), self.distinct)
+
 class Db:
 	def __init__(self):
 		self.catalog = {}
@@ -590,7 +636,7 @@ class Db:
 			self.__execute_create_table(ast_root)
 		elif statement_type == InsertIntoNode:
 			self.__execute_insert(ast_root)
-		elif statement_type == SelectNode:
+		elif statement_type == SelectNode or statement_type == SetOperatorNode:
 			return ast_root.compile(self.catalog)
 		else:
 			raise TypeError('Unknown AST node type')
