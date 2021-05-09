@@ -250,6 +250,10 @@ def p_expression(p):
 	else:
 		p[0] = p[1]
 
+def p_expression_function_evaluation(p):
+	'''expression : IDENTIFIER '(' expression ')' '''
+	p[0] = FunctionEvaluationNode(name=p[1], argument=p[3])
+
 def p_expression_binary_operator(p):
 	'''expression :   expression '+' expression
 					| expression '-' expression
@@ -345,6 +349,28 @@ class ColumnReferenceNode(ExpressionNode):
 
 	def compile(self, column_mappings):
 		return relation.Attribute(column_mappings.get_column(self))
+
+class FunctionEvaluationNode(ExpressionNode):
+	def __init__(self, name, argument):
+		self.name = name
+		self.argument = argument
+		self.attribute_access = None
+
+	def compile(self, column_mappings):
+		return self.attribute_access
+
+	def get_aggregation(self, column_mappings):
+		if self.name == 'count':
+			return relation.CountFactory(self.argument.compile(column_mappings))
+		if self.name == 'max':
+			return relation.MaxFactory(self.argument.compile(column_mappings))
+		if self.name == 'min':
+			return relation.MinFactory(self.argument.compile(column_mappings))
+		if self.name == 'sum':
+			return relation.SumFactory(self.argument.compile(column_mappings))
+		if self.name == 'avg':
+			return relation.AvgFactory(self.argument.compile(column_mappings))
+		raise ValueError('Unknown aggregation function %r' % self.name)
 
 class BinaryOperationNode(ExpressionNode):
 	def __init__(self, op, lhs, rhs):
@@ -463,10 +489,37 @@ class SelectNode:
 								self.where_predicate.compile(column_mappings))
 
 	def compile_group_by(self, input_relation, column_mappings):
-		if not self.group_by:
+		aggregate_nodes = []
+
+		def extract_aggregates(node):
+			'''
+			Traverses an expression tree, adding function evaluation nodes to
+			the aggregates array.
+			'''
+			if type(node) == ConstantNode:
+				pass
+			elif type(node) == ColumnReferenceNode:
+				pass
+			elif type(node) == FunctionEvaluationNode:
+				aggregate_nodes.append(node)
+			elif type(node) == BinaryOperationNode:
+				extract_aggregates(node.lhs)
+				extract_aggregates(node.rhs)
+			elif type(node) == UnaryOperationNode:
+				extract_aggregates(node.operand)
+			elif type(node) == CastNode:
+				extract_aggregates(node.expression)
+			else:
+				raise TypeError('Unrecognized node type %r' % type(node))
+
+		for expression in self.select_expressions:
+			extract_aggregates(expression)
+
+		if not (self.group_by or aggregate_nodes):
 			return input_relation, column_mappings
 
-		aggregates = []
+		aggregates = [
+			node.get_aggregation(column_mappings) for node in aggregate_nodes]
 		grouping_columns = []
 		output_mappings = ColumnMappings()
 		for column_ref in self.group_by:
@@ -477,6 +530,15 @@ class SelectNode:
 
 		output_relation = relation.GroupBy(
 								input_relation, grouping_columns, aggregates)
+		aggregate_columns = output_relation.columns[len(grouping_columns):]
+		for node, column in zip(aggregate_nodes, aggregate_columns):
+			table_name = None
+			# Add aggregates to output mappings
+			output_mappings.add_column(table_name, column)
+			# Rewrite select list expression to reference output of group by
+			node.attribute_access = relation.Attribute(column)
+		assert(len(output_relation.columns) == len(grouping_columns) + len(aggregates))
+
 		return output_relation, output_mappings
 
 	def compile_generalized_projection(self, input_relation, column_mappings):

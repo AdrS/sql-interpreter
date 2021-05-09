@@ -567,6 +567,77 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1,), (3,)])
 
+	def test_should_raise_error_for_nonaggregated_column_implicit_group(self):
+		db = Db()
+		db.execute('create table t (a integer);')
+
+		# TODO: Improve the error message
+		with self.assertRaisesRegex(KeyError, 'a'):
+			db.execute('select a + count(1) from t;')
+
+	def test_aggregation_with_implicit_group_by(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+
+		cursor = db.execute('select min(a) + max(b), 10*count(1) from t;')
+
+		self.assertEqual(list(cursor), [(33, 40)])
+
+	def test_group_by(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+
+		cursor = db.execute('''select
+				a, max(b), min(b), count(b), avg(b), sum(b)
+			from t group by a;''')
+
+		self.assertEqual(list(cursor),
+			[(1, 12, 11, 2, 11.5, 23), (3, 32, 31, 2, 31.5, 63)])
+
+	def test_aggregation_of_group_by_column(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+
+		cursor = db.execute('''select
+				a, max(a), min(a), count(a), avg(a), sum(a)
+			from t group by a;''')
+
+		self.assertEqual(list(cursor),
+			[(1, 1, 1, 2, 1, 2), (3, 3, 3, 2, 3, 6)])
+
+	def test_aggregation_of_expression(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+
+		cursor = db.execute('select a, max(2*b) from t group by a;')
+
+		self.assertEqual(list(cursor), [(1, 24), (3, 64)])
+
+	def test_expression_of_aggregations(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('insert into t values ((1, 11), (1, 12), (3, 30), (3, 32));')
+
+		cursor = db.execute('''select
+				10*a,  max(b) - min(b), count(a) + sum(a)
+			from t group by a;''')
+
+		self.assertEqual(list(cursor), [(10, 1, 4), (30, 2, 8)])
+
+	def test_group_by_and_where(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+		db.execute('''insert into t values (
+			(1, 10), (1, 20), (3, 30), (3, 40), (4, 50));''')
+
+		cursor = db.execute('select a,  max(b) from t where b < 35 group by a;')
+
+		self.assertEqual(list(cursor), [(1, 20), (3, 30)])
+
 	# TODO:
 	# - table wildcard e.g. SELECT r.* FROM r, s
 	# TODO:
