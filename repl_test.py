@@ -65,10 +65,9 @@ class TestInsertInto(unittest.TestCase):
 	def test(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float, d boolean);')
-		db.execute('''insert into t VALUES (
+		db.execute('''insert into t VALUES
 				(123, \'abc\', 3.14, true),
-				(456, \'def\', 2.71, false)
-				);''')
+				(456, \'def\', 2.71, false);''')
 
 		self.assertEqual(list(db.catalog['t']), [
 				(123, 'abc', 3.14, True),
@@ -78,7 +77,7 @@ class TestInsertInto(unittest.TestCase):
 	def test_should_insert_nulls_for_nullable_column(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float, d boolean);')
-		db.execute('insert into t VALUES ((null, null, null, null));')
+		db.execute('insert into t VALUES (null, null, null, null);')
 
 		self.assertEqual(list(db.catalog['t']), [
 				(None, None, None, None)
@@ -89,47 +88,47 @@ class TestInsertInto(unittest.TestCase):
 		db.execute('create table t (a integer, b string);')
 
 		with self.assertRaisesRegex(TypeError, 'wrong type'):
-			db.execute('insert into t VALUES ((\'hi\', true));')
+			db.execute('insert into t VALUES (\'hi\', true);')
 
 	def test_should_raise_error_inserting_null_value_in_not_null_field(self):
 		db = Db()
 		db.execute('create table t (a integer not null, b string);')
 
 		with self.assertRaisesRegex(TypeError, 'NULL value'):
-			db.execute('insert into t values ((null, \'hi\'));')
+			db.execute('insert into t values (null, \'hi\');')
 
 	def test_should_raise_error_for_non_existing_table(self):
 		db = Db()
 		with self.assertRaisesRegex(KeyError, 'Table .* does not exist'):
-			db.execute('insert into dne values ((123, \'hi\'));')
+			db.execute('insert into dne values (123, \'hi\');')
 
 	def test_should_raise_error_for_wrong_number_of_fields(self):
 		db = Db()
 		db.execute('create table t (a integer, b string);')
 
 		with self.assertRaisesRegex(TypeError, 'number of columns'):
-			db.execute('insert into t values ((123, \'hi\', true));')
+			db.execute('insert into t values (123, \'hi\', true);')
 
 	def test_should_raise_error_for_invalid_syntax(self):
 		db = Db()
 		test_cases = [
-			('insert into t values (123, \'hi\', true);',
+			('insert into t values ((123, \'hi\', true));',
 			 'invalid tuple list'),
-			('into t values ((1,2), (3,4));',
+			('into t values (1,2), (3,4);',
 			 'missing insert'),
-			('insert t values ((1,2), (3,4));',
+			('insert t values (1,2), (3,4);',
 			 'missing into'),
-			('insert into 123 values ((1,2), (3,4));',
+			('insert into 123 values (1,2), (3,4);',
 			 'invalid name'),
-			('insert into t value ((1,2), (3,4));',
+			('insert into t value (1,2), (3,4);',
 			 'missing values'),
-			('insert into t values ((1,2),));',
+			('insert into t values (1,2),;',
 			 'trailing comma invalid list'),
-			('insert into t values ((1,2) (3,4));',
+			('insert into t values (1,2) (3,4);',
 			 'missing comma'),
-			('insert into t values ((1,2), (3,4))',
+			('insert into t values (1,2), (3,4)',
 			 'missing semicolon'),
-			('insert into t values ((1,), (3,4));',
+			('insert into t values (1,), (3,4);',
 			 'invalid tuple')
 		]
 		for command, msg in test_cases:
@@ -139,12 +138,12 @@ class TestInsertInto(unittest.TestCase):
 	def test_insert_should_be_atomic(self):
 		db = Db()
 		db.execute('create table t (a integer not null, b string);')
-		db.execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+		db.execute('insert into t values (1, \'a\'), (2, \'b\');')
 
 		# The valid tuple (3, 'c') should not be inserted because the other
 		# tuple (null, 'd') violates the not null constraint.
 		with self.assertRaisesRegex(TypeError, 'NULL value'):
-			db.execute('insert into t values ((3, \'c\'), (null, \'d\'));')
+			db.execute('insert into t values (3, \'c\'), (null, \'d\');')
 
 		self.assertEqual(list(db.catalog['t']), [(1, 'a'), (2, 'b')])
 
@@ -153,7 +152,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_all_columns(self):
 		db = Db()
 		db.execute('create table t (a integer, b string);')
-		db.execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+		db.execute('insert into t values (1, \'a\'), (2, \'b\');')
 
 		cursor = db.execute('select * from t;')
 
@@ -167,7 +166,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_columns_by_name(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float);')
-		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+		db.execute('insert into t values (1, \'a\', 3.14), (2, \'b\', 2.71);')
 
 		cursor = db.execute('select a, c from t;')
 
@@ -183,7 +182,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_columns_by_full_name(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float);')
-		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+		db.execute('insert into t values (1, \'a\', 3.14), (2, \'b\', 2.71);')
 
 		cursor = db.execute('select t.a, t.c from t;')
 
@@ -192,7 +191,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_table_alias(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float);')
-		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+		db.execute('insert into t values (1, \'a\', 3.14), (2, \'b\', 2.71);')
 
 		cursor = db.execute('select s.a, c from t as s;')
 
@@ -201,7 +200,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_table_short_alias(self):
 		db = Db()
 		db.execute('create table t (a integer, b string, c float);')
-		db.execute('insert into t values ((1, \'a\', 3.14), (2, \'b\', 2.71));')
+		db.execute('insert into t values (1, \'a\', 3.14), (2, \'b\', 2.71);')
 
 		cursor = db.execute('select s.a, c from t s;')
 
@@ -217,7 +216,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_constant(self):
 		db = Db()
 		db.execute('create table t (a integer, b string);')
-		db.execute('insert into t values ((1, \'a\'), (2, \'b\'));')
+		db.execute('insert into t values (1, \'a\'), (2, \'b\');')
 
 		cursor = db.execute('select 123, 3.14, \'hi\', true, null from t;')
 
@@ -230,7 +229,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_expression_with_binary_operation(self):
 		db = Db()
 		db.execute('create table t (a integer);')
-		db.execute('insert into t values ((10), (15), (20));')
+		db.execute('insert into t values (10), (15), (20);')
 
 		cursor = db.execute('''
 			select
@@ -257,7 +256,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_expression_with_and_or(self):
 		db = Db()
 		db.execute('create table t (a boolean);')
-		db.execute('insert into t values ((true), (false));')
+		db.execute('insert into t values (true), (false);')
 
 		cursor = db.execute('''
 			select
@@ -276,7 +275,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_expression_unary_minus(self):
 		db = Db()
 		db.execute('create table t (a integer);')
-		db.execute('insert into t values ((10), (15), (20));')
+		db.execute('insert into t values (10), (15), (20);')
 
 		cursor = db.execute('''select -a from t;''')
 
@@ -285,7 +284,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_expression_logical_not(self):
 		db = Db()
 		db.execute('create table t (a boolean);')
-		db.execute('insert into t values ((true), (false));')
+		db.execute('insert into t values (true), (false);')
 
 		cursor = db.execute('''select not a from t;''')
 
@@ -294,7 +293,7 @@ class TestSelect(unittest.TestCase):
 	def test_select_expression_is_null(self):
 		db = Db()
 		db.execute('create table t (a integer);')
-		db.execute('insert into t values ((10), (null));')
+		db.execute('insert into t values (10), (null);')
 
 		cursor = db.execute('''select a is null, a is not null from t;''')
 
@@ -303,7 +302,7 @@ class TestSelect(unittest.TestCase):
 	def test_cast_from_boolean(self):
 		db = Db()
 		db.execute('create table t (a boolean);')
-		db.execute('insert into t values ((true), (false));')
+		db.execute('insert into t values (true), (false);')
 
 		cursor = db.execute(
 					'select cast(a as integer), cast(a as string) from t;')
@@ -313,7 +312,7 @@ class TestSelect(unittest.TestCase):
 	def test_should_raise_error_casting_boolean_to_float(self):
 		db = Db()
 		db.execute('create table t (a boolean);')
-		db.execute('insert into t values ((true), (false));')
+		db.execute('insert into t values (true), (false);')
 
 		with self.assertRaisesRegex(TypeError, 'cast'):
 			cursor = db.execute('select cast(a as float) from t;')
@@ -321,7 +320,7 @@ class TestSelect(unittest.TestCase):
 	def test_cast_from_integer(self):
 		db = Db()
 		db.execute('create table t (a integer);')
-		db.execute('insert into t values ((0), (10));')
+		db.execute('insert into t values (0), (10);')
 
 		cursor = db.execute('''select
 									cast(a as boolean),
@@ -334,7 +333,7 @@ class TestSelect(unittest.TestCase):
 	def test_cast_from_float(self):
 		db = Db()
 		db.execute('create table t (a float);')
-		db.execute('insert into t values ((3.14));')
+		db.execute('insert into t values (3.14);')
 
 		cursor = db.execute('''select
 									cast(a as integer),
@@ -346,7 +345,7 @@ class TestSelect(unittest.TestCase):
 	def test_should_raise_error_casting_float_to_boolean(self):
 		db = Db()
 		db.execute('create table t (a float);')
-		db.execute('insert into t values ((3.14));')
+		db.execute('insert into t values (3.14);')
 
 		with self.assertRaisesRegex(TypeError, 'cast'):
 			cursor = db.execute('select cast(a as boolean) from t;')
@@ -360,11 +359,10 @@ class TestSelect(unittest.TestCase):
 	def test_where_clause(self):
 		db = Db()
 		db.execute('create table t (a integer, b string);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values
 			(123, \'hi\'),
 			(456, \'bye\'),
-			(789, \'hi\')
-			);''')
+			(789, \'hi\');''')
 
 		cursor = db.execute('select a from t where b = \'hi\';')
 
@@ -388,8 +386,8 @@ class TestSelect(unittest.TestCase):
 		db = Db()
 		db.execute('create table r (a integer);')
 		db.execute('create table s (b integer);')
-		db.execute('insert into r values ((0), (10));')
-		db.execute('insert into s values ((1), (2));')
+		db.execute('insert into r values (0), (10);')
+		db.execute('insert into s values (1), (2);')
 
 		cursor = db.execute('select a, b from r, s;')
 
@@ -399,8 +397,8 @@ class TestSelect(unittest.TestCase):
 		db = Db()
 		db.execute('create table r (a integer);')
 		db.execute('create table s (b integer);')
-		db.execute('insert into r values ((0), (10));')
-		db.execute('insert into s values ((1), (2));')
+		db.execute('insert into r values (0), (10);')
+		db.execute('insert into s values (1), (2);')
 
 		cursor = db.execute('select * from r, s;')
 
@@ -411,8 +409,8 @@ class TestSelect(unittest.TestCase):
 	# 	db = Db()
 	# 	db.execute('create table r (a integer);')
 	# 	db.execute('create table s (b integer, c integer);')
-	# 	db.execute('insert into r values ((0), (10));')
-	# 	db.execute('insert into s values ((1, 11), (2, 22);')
+	# 	db.execute('insert into r values (0), (10);')
+	# 	db.execute('insert into s values (1, 11), (2, 22);')
 
 	# 	cursor = db.execute('select a, s.* from r, s;')
 
@@ -423,8 +421,8 @@ class TestSelect(unittest.TestCase):
 		db = Db()
 		db.execute('create table r (a integer);')
 		db.execute('create table s (b integer);')
-		db.execute('insert into r values ((0), (4), (10));')
-		db.execute('insert into s values ((1), (5));')
+		db.execute('insert into r values (0), (4), (10);')
+		db.execute('insert into s values (1), (5);')
 
 		cursor = db.execute('select a, b from r, s where b > a;')
 
@@ -435,9 +433,9 @@ class TestSelect(unittest.TestCase):
 		db.execute('create table r (a integer);')
 		db.execute('create table s (b boolean);')
 		db.execute('create table t (c string);')
-		db.execute('insert into r values ((0), (1));')
-		db.execute('insert into s values ((true), (false));')
-		db.execute('''insert into t values (('a'), ('b'));''')
+		db.execute('insert into r values (0), (1);')
+		db.execute('insert into s values (true), (false);')
+		db.execute('''insert into t values ('a'), ('b');''')
 
 		cursor = db.execute('select a, b, c from r, s, t;')
 
@@ -457,8 +455,8 @@ class TestSelect(unittest.TestCase):
 		db = Db()
 		db.execute('create table r (a integer);')
 		db.execute('create table s (a integer);')
-		db.execute('insert into r values ((0), (10));')
-		db.execute('insert into s values ((1), (2));')
+		db.execute('insert into r values (0), (10);')
+		db.execute('insert into s values (1), (2);')
 
 		cursor = db.execute('select r.a, s.a from r, s;')
 
@@ -480,12 +478,12 @@ class TestSelect(unittest.TestCase):
 		with self.assertRaisesRegex(ValueError, 'Non-unique table name'):
 			db.execute('select * from r t, s as t;')
 
-	def test_table_alias_has_same_name_as_exisitng_table(self):
+	def test_table_alias_has_same_name_as_exisiting_table(self):
 		db = Db()
 		db.execute('create table r (a integer);')
 		db.execute('create table s (a integer);')
-		db.execute('insert into r values ((0), (10));')
-		db.execute('insert into s values ((1), (2));')
+		db.execute('insert into r values (0), (10);')
+		db.execute('insert into s values (1), (2);')
 
 		cursor = db.execute('select s.a from r as s;')
 
@@ -494,7 +492,7 @@ class TestSelect(unittest.TestCase):
 	def test_join_table_with_self(self):
 		db = Db()
 		db.execute('create table r (a integer);')
-		db.execute('insert into r values ((1), (2));')
+		db.execute('insert into r values (1), (2);')
 
 		cursor = db.execute('select r.a, s.a from r, r as s;')
 
@@ -511,7 +509,7 @@ class TestSelect(unittest.TestCase):
 	def test_group_by_no_aggregates(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 31), (3, 32);')
 
 		cursor = db.execute('select a from t group by a;')
 
@@ -520,14 +518,13 @@ class TestSelect(unittest.TestCase):
 	def test_group_by_multiple_columns(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer, c integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values
 				(1, 11, 1),
 				(1, 11, 2),
 				(1, 11, 3),
 				(3, 31, 1),
 				(3, 32, 1),
-				(3, 32, 2)
-		);''')
+				(3, 32, 2);''')
 
 		cursor = db.execute('select a, b, a + b from t group by a, b;')
 
@@ -536,14 +533,13 @@ class TestSelect(unittest.TestCase):
 	def test_group_by_with_where_clause_referencing_group_by_column(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer, c integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values
 				(1, 11, 1),
 				(1, 11, 2),
 				(1, 11, 3),
 				(3, 31, 1),
 				(3, 32, 1),
-				(3, 32, 2)
-		);''')
+				(3, 32, 2);''')
 
 		cursor = db.execute('select b from t where a = 3 group by a, b;')
 
@@ -552,7 +548,7 @@ class TestSelect(unittest.TestCase):
 	def test_group_by_with_where_clause_referencing_non_aggregated_column(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values
 				(1, 1),
 				(1, 2),
 				(1, 3),
@@ -560,8 +556,7 @@ class TestSelect(unittest.TestCase):
 				(2, 4),
 				(3, 1),
 				(3, 1),
-				(3, 2)
-		);''')
+				(3, 2);''')
 
 		cursor = db.execute('select a from t where b = 1 group by a;')
 
@@ -578,7 +573,7 @@ class TestSelect(unittest.TestCase):
 	def test_aggregation_with_implicit_group_by(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 31), (3, 32);')
 
 		cursor = db.execute('select min(a) + max(b), 10*count(1) from t;')
 
@@ -587,7 +582,7 @@ class TestSelect(unittest.TestCase):
 	def test_group_by(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 31), (3, 32);')
 
 		cursor = db.execute('''select
 				a, max(b), min(b), count(b), avg(b), sum(b)
@@ -599,7 +594,7 @@ class TestSelect(unittest.TestCase):
 	def test_aggregation_of_group_by_column(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 31), (3, 32);')
 
 		cursor = db.execute('''select
 				a, max(a), min(a), count(a), avg(a), sum(a)
@@ -611,7 +606,7 @@ class TestSelect(unittest.TestCase):
 	def test_aggregation_of_expression(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 31), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 31), (3, 32);')
 
 		cursor = db.execute('select a, max(2*b) from t group by a;')
 
@@ -620,7 +615,7 @@ class TestSelect(unittest.TestCase):
 	def test_expression_of_aggregations(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('insert into t values ((1, 11), (1, 12), (3, 30), (3, 32));')
+		db.execute('insert into t values (1, 11), (1, 12), (3, 30), (3, 32);')
 
 		cursor = db.execute('''select
 				10*a,  max(b) - min(b), count(a) + sum(a)
@@ -631,8 +626,8 @@ class TestSelect(unittest.TestCase):
 	def test_group_by_and_where(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 10), (1, 20), (3, 30), (3, 40), (4, 50));''')
+		db.execute('''insert into t values 
+			(1, 10), (1, 20), (3, 30), (3, 40), (4, 50);''')
 
 		cursor = db.execute('select a,  max(b) from t where b < 35 group by a;')
 
@@ -643,8 +638,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_union_removes_duplicates_by_default(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute('select a from t union select b from t;')
 
@@ -653,8 +647,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_union_all(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute('select a from t union all select b from t;')
 
@@ -663,8 +656,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_union_distinct(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute('select a from t union distinct select b from t;')
 
@@ -673,10 +665,9 @@ class TestSetOperations(unittest.TestCase):
 	def test_multiple_unions(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 		db.execute('create table s (c integer);')
-		db.execute('insert into s values ((1), (4));')
+		db.execute('insert into s values (1), (4);')
 
 		cursor = db.execute('''select a from t union
 			select b from t union select c from s;''')
@@ -686,8 +677,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_intersect_removes_duplicates_by_default(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute('select a from t intersect select b from t;')
 
@@ -696,8 +686,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_intersect_all(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute('select a from t intersect all select b from t;')
 
@@ -706,8 +695,7 @@ class TestSetOperations(unittest.TestCase):
 	def test_intersect_distinct(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (1, 3), (2, 3);')
 
 		cursor = db.execute(
 					'select a from t intersect distinct select b from t;')
@@ -717,10 +705,9 @@ class TestSetOperations(unittest.TestCase):
 	def test_multiple_intersections(self):
 		db = Db()
 		db.execute('create table t (a integer, b integer);')
-		db.execute('''insert into t values (
-			(1, 1), (2, 2), (1, 3), (2, 3));''')
+		db.execute('insert into t values (1, 1), (2, 2), (1, 3), (2, 3);')
 		db.execute('create table s (c integer);')
-		db.execute('insert into s values ((1), (4));')
+		db.execute('insert into s values (1), (4);')
 
 		cursor = db.execute('''select a from t intersect
 			select b from t intersect select c from s;''')
@@ -732,10 +719,10 @@ class TestSetOperations(unittest.TestCase):
 		# ({1} intersect {1}) union {2} = {1, 2}
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1),
 			('b', 1),
-			('c', 2));''')
+			('c', 2);''')
 
 		cursor = db.execute('''select v from t where s = 'a' intersect
 			select v from t where s = 'b' union
@@ -746,8 +733,8 @@ class TestSetOperations(unittest.TestCase):
 	def test_except_removes_duplicates_by_default(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
-			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+		db.execute('''insert into t values 
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3);''')
 
 		cursor = db.execute('''select v from t where s = 'a' except
 			select v from t where s = 'b';''')
@@ -757,8 +744,8 @@ class TestSetOperations(unittest.TestCase):
 	def test_except_all(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
-			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+		db.execute('''insert into t values 
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3);''')
 
 		cursor = db.execute('''select v from t where s = 'a' except all
 			select v from t where s = 'b';''')
@@ -768,8 +755,8 @@ class TestSetOperations(unittest.TestCase):
 	def test_except_distinct(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
-			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+		db.execute('''insert into t values 
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3);''')
 
 		cursor = db.execute('''select v from t where s = 'a' except distinct
 			select v from t where s = 'b';''')
@@ -779,11 +766,11 @@ class TestSetOperations(unittest.TestCase):
 	def test_multiple_excepts(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1), ('a', 2), ('a', 3),
 			('b', 3), ('b', 4),
 			('c', 5), ('c', 2)
-		);''')
+		;''')
 
 		cursor = db.execute('''select v from t where s = 'a' except
 			select v from t where s = 'b' except
@@ -797,11 +784,11 @@ class TestSetOperations(unittest.TestCase):
 		# {1} except ({2} union {1}) = {}
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1),
 			('b', 2),
 			('c', 1)
-		);''')
+		;''')
 
 		cursor = db.execute('''select v from t where s = 'a' except
 			select v from t where s = 'b' union
@@ -824,10 +811,10 @@ class TestSetOperations(unittest.TestCase):
 		# ({1} intersect {1}) union {2} = {1, 2}
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1),
 			('b', 1),
-			('c', 2));''')
+			('c', 2);''')
 
 		cursor = db.execute('''select v from t where s = 'a' intersect
 			select v from t where s = 'b' union
@@ -838,10 +825,10 @@ class TestSetOperations(unittest.TestCase):
 	def test_query_with_parens(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1),
 			('b', 1),
-			('c', 2));''')
+			('c', 2);''')
 
 		cursor = db.execute('''((select v from t where s = 'a')) intersect
 			(select v from t where s = 'b' union
@@ -852,10 +839,10 @@ class TestSetOperations(unittest.TestCase):
 	def test_should_raise_error_for_incompatible_schemas(self):
 		db = Db()
 		db.execute('create table t (s string, v integer);')
-		db.execute('''insert into t values (
+		db.execute('''insert into t values 
 			('a', 1),
 			('b', 1),
-			('c', 2));''')
+			('c', 2);''')
 
 		with self.assertRaisesRegex(ValueError, 'same'):
 			db.execute('select s from t union select * from t;')

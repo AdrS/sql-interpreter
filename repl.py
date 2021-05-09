@@ -142,8 +142,8 @@ def p_nullable(p):
 	p[0] = len(p) != 3
 
 def p_insert_statement(p):
-	'''insert_statement : INSERT INTO IDENTIFIER VALUES '(' values_list ')' '''
-	p[0] = InsertIntoNode(table_name=p[3], tuples=p[6])
+	'insert_statement : INSERT INTO IDENTIFIER VALUES values_list'
+	p[0] = InsertIntoNode(table_name=p[3], tuples=p[5])
 
 def p_values_list_base(p):
 	'values_list : tuple_value'
