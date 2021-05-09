@@ -638,7 +638,7 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1, 20), (3, 30)])
 
-class TestUnion(unittest.TestCase):
+class TestSetOperations(unittest.TestCase):
 
 	def test_union_removes_duplicates_by_default(self):
 		db = Db()
@@ -682,8 +682,6 @@ class TestUnion(unittest.TestCase):
 			select b from t union select c from s;''')
 
 		self.assertEqual(list(cursor), [(1, ), (2,), (3,), (4,)])
-
-class TestIntersect(unittest.TestCase):
 
 	def test_intersect_removes_duplicates_by_default(self):
 		db = Db()
@@ -745,7 +743,122 @@ class TestIntersect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1,), (2,)])
 
-	# TODO: precedence of union vs intersect vs except
+	def test_except_removes_duplicates_by_default(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+
+		cursor = db.execute('''select v from t where s = 'a' except
+			select v from t where s = 'b';''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_except_all(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+
+		cursor = db.execute('''select v from t where s = 'a' except all
+			select v from t where s = 'b';''')
+
+		self.assertEqual(list(cursor), [(1,), (1,)])
+
+	def test_except_distinct(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1), ('a', 1), ('a', 2), ('b', 2), ('b', 3));''')
+
+		cursor = db.execute('''select v from t where s = 'a' except distinct
+			select v from t where s = 'b';''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_multiple_excepts(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1), ('a', 2), ('a', 3),
+			('b', 3), ('b', 4),
+			('c', 5), ('c', 2)
+		);''')
+
+		cursor = db.execute('''select v from t where s = 'a' except
+			select v from t where s = 'b' except
+			select v from t where s = 'c';''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_except_has_same_precedence_as_union(self):
+		# Precedence of union is not-greater than except
+		# ({1} except {2}) union {1} = {1}
+		# {1} except ({2} union {1}) = {}
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1),
+			('b', 2),
+			('c', 1)
+		);''')
+
+		cursor = db.execute('''select v from t where s = 'a' except
+			select v from t where s = 'b' union
+			select v from t where s = 'c';''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+		# Precedence of except is not-greater than union
+		# {1} union ({2} except {1}) = {1}
+		# ({1} union {2}) except {1} = {2}
+		cursor = db.execute('''select v from t where s = 'a' union
+			select v from t where s = 'b' except
+			select v from t where s = 'c';''')
+
+		self.assertEqual(list(cursor), [(2,)])
+
+
+	def test_intersect_has_higher_precedence_than_except(self):
+		# {1} intersect ({1} union {2}) = {1}
+		# ({1} intersect {1}) union {2} = {1, 2}
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1),
+			('b', 1),
+			('c', 2));''')
+
+		cursor = db.execute('''select v from t where s = 'a' intersect
+			select v from t where s = 'b' union
+			select v from t where s = 'c';''')
+
+		self.assertEqual(list(cursor), [(1,), (2,)])
+
+	def test_query_with_parens(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1),
+			('b', 1),
+			('c', 2));''')
+
+		cursor = db.execute('''((select v from t where s = 'a')) intersect
+			(select v from t where s = 'b' union
+			select v from t where s = 'c');''')
+
+		self.assertEqual(list(cursor), [(1,)])
+
+	def test_should_raise_error_for_incompatible_schemas(self):
+		db = Db()
+		db.execute('create table t (s string, v integer);')
+		db.execute('''insert into t values (
+			('a', 1),
+			('b', 1),
+			('c', 2));''')
+
+		with self.assertRaisesRegex(ValueError, 'same'):
+			db.execute('select s from t union select * from t;')
 
 	# TODO:
 	# - table wildcard e.g. SELECT r.* FROM r, s

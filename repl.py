@@ -13,6 +13,7 @@ keywords = {
 	'cast':'CAST',
 	'create':'CREATE',
 	'distinct':'DISTINCT',
+	'except':'EXCEPT',
 	'false':'FALSE',
 	'float':'FLOAT',
 	'from':'FROM',
@@ -45,7 +46,7 @@ tokens = (
 ) + tuple(keywords.values())
 
 precedence = (
-	('left', 'UNION'), # except has same precdence
+	('left', 'UNION', 'EXCEPT'),
 	('left', 'INTERSECT'),
 	('left', 'OR'),
 	('left', 'AND'),
@@ -187,6 +188,10 @@ def p_expression_constant(p):
 	p[0] = ConstantNode(p[1])
 
 def p_query_statement(p):
+	'''query_statement : '(' query_statement ')' '''
+	p[0] = p[2]
+
+def p_query_statement_select(p):
 	'query_statement : select_statement'
 	p[0] = p[1]
 
@@ -204,6 +209,7 @@ def p_distinctness(p):
 def p_query_statement_set_op(p):
 	'''query_statement : query_statement UNION distinctness query_statement
 					| query_statement INTERSECT distinctness query_statement
+					| query_statement EXCEPT distinctness query_statement
 	'''
 	op = p[2]
 	distinct = p[3] != 'all'
@@ -595,7 +601,8 @@ class SelectNode:
 class SetOperatorNode:
 	operations = {
 		'union':relation.Union,
-		'intersect':relation.Intersection
+		'intersect':relation.Intersection,
+		'except':relation.Difference
 	}
 	def __init__(self, op, lhs, rhs, distinct):
 		self.op = SetOperatorNode.operations[op]
