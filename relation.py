@@ -779,7 +779,6 @@ class AvgFactory(AggregateFactory):
 	def new_aggregate(self):
 		return Avg(self.expression)
 
-# TODO: expressions in terms of aggregates
 class GroupBy(Relation):
 	def __init__(self, relation, grouping_columns, aggregates=[]):
 		'''
@@ -819,25 +818,6 @@ class GroupBy(Relation):
 			for aggregate in current_aggregates:
 				current_group.append(aggregate.final())
 			yield tuple(current_group)
-
-# TODO: Replace with project where expressions handle the rename
-# Rename(relation, {'column_1_old_name': 'new_name', ...}
-class Rename(Relation):
-	def __init__(self, relation, renamings):
-		'''
-		Renames the columns of relation according to a dictionary mapping input
-		column names to output column names.
-		'''
-		columns = []
-		for column in relation.columns:
-			new_name = renamings.get(column.name, column.name)
-			columns.append(Column(new_name, column.type, column.nullable))
-		super().__init__(columns)
-
-def generate_names(n):
-	'Returns n auto-generated column names'
-	return ['f_%d' for i in range(n)]
-
 
 class CrossJoin(Relation):
 	def __init__(self, lhs, rhs):

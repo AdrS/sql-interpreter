@@ -812,14 +812,6 @@ class TestSort(unittest.TestCase):
 		self.assertEqual(list(ordered),
 			[('Alice', 13), ('Bob', 24), ('Alice', 25), ('Mallory', 35)])
 
-	def test_should_return_error_for_invalid_sort_attribute(self):
-		relation = MaterialRelation([
-			Column('name', str), Column('age', int),
-		])
-		invalid_column = Column('country', str)
-		with self.assertRaisesRegex(ValueError, 'not a column'):
-			Sort(relation, sort_key=[relation.columns[1], invalid_column])
-
 	def test_sort_orders_null_first(self):
 		relation = MaterialRelation([
 			Column('age', int, nullable=True),
