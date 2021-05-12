@@ -233,6 +233,10 @@ def p_select_expression(p):
 						| expression'''
 	p[0] = p[1]
 
+def p_select_expression_with_alias(p):
+	'''select_expression : expression AS IDENTIFIER'''
+	p[0] = NamedExpression(p[1], p[3])
+
 def p_tables_expressions_base(p):
 	'''table_expressions : table_expression'''
 	p[0] = [p[1]]
@@ -363,11 +367,19 @@ class ExpressionNode(AstNode):
 		'''
 		raise NotImplemented
 
+class NamedExpression(ExpressionNode):
+	def __init__(self, expression, name):
+		self.expression = expression
+		self.name = name
+
+	def compile(self, column_mappings):
+		return self.expression.compile(column_mappings)
+
 class ConstantNode(ExpressionNode):
 	def __init__(self, value):
 		self.value = value
 
-	def compile(self, env):
+	def compile(self, column_mappings):
 		return relation.Constant(self.value)
 
 class ColumnReferenceNode(ExpressionNode):
@@ -535,6 +547,8 @@ class SelectNode:
 			'''
 			if type(node) == ConstantNode:
 				pass
+			elif type(node) == NamedExpression:
+				extract_aggregates(node.expression)
 			elif type(node) == ColumnReferenceNode:
 				pass
 			elif type(node) == FunctionEvaluationNode:
@@ -590,7 +604,13 @@ class SelectNode:
 
 		expressions = [expression.compile(column_mappings) for
 						expression in select_expressions]
-		return relation.GeneralizedProjection(input_relation, expressions)
+		output_relation = (
+			relation.GeneralizedProjection(input_relation, expressions))
+		# Column aliases
+		for i, expression in enumerate(self.select_expressions):
+			if type(expression) == NamedExpression:
+				output_relation.columns[i].name = expression.name
+		return output_relation
 
 	def compile(self, catalog):
 		stage1, env1 = self.compile_joins(catalog)

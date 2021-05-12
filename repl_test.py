@@ -633,6 +633,27 @@ class TestSelect(unittest.TestCase):
 
 		self.assertEqual(list(cursor), [(1, 20), (3, 30)])
 
+	def test_column_aliases(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+
+		cursor = db.execute('select a, b + 1 as c from t;')
+
+		self.assertEqual(len(cursor.columns), 2)
+		self.assertEqual(cursor.columns[0].name, 'a')
+		self.assertEqual(cursor.columns[1].name, 'c')
+
+	def test_should_allow_multiple_columns_with_same_alias(self):
+		db = Db()
+		db.execute('create table t (a integer, b integer);')
+
+		cursor = db.execute('select a as c, b + 1 as c, 123 as C from t;')
+
+		self.assertEqual(len(cursor.columns), 3)
+		self.assertEqual(cursor.columns[0].name, 'c')
+		self.assertEqual(cursor.columns[1].name, 'c')
+		self.assertEqual(cursor.columns[2].name, 'c')
+
 class TestSetOperations(unittest.TestCase):
 
 	def test_union_removes_duplicates_by_default(self):
@@ -850,7 +871,6 @@ class TestSetOperations(unittest.TestCase):
 	# TODO:
 	# - table wildcard e.g. SELECT r.* FROM r, s
 	# TODO:
-	# column alias
 	# select all vs select distinct
 	# order by asc, desc, nulls first, last
 	# select without a "FROM" e.g. "select 123;"
