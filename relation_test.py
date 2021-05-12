@@ -653,7 +653,7 @@ class TestGeneralizedProjection(unittest.TestCase):
 		])
 		projection = GeneralizedProjection(relation, [
 			Arithmetic('-', Constant(2021), Attribute(relation.columns[1])),
-			LogicalNot(Attribute(relation.columns[2]))
+			LogicalNot(Attribute(relation.columns[2])),
 		])
 		self.assertEqual(len(projection.columns), 2)
 		self.assertEqual(projection.columns[0].type, int)
@@ -662,7 +662,20 @@ class TestGeneralizedProjection(unittest.TestCase):
 		self.assertEqual(projection.columns[1].type, bool)
 		self.assertEqual(projection.columns[1].nullable, False)
 		self.assertEqual(projection.columns[1].index, 1)
-		# TODO: set names
+
+	def test_should_have_expected_column_names(self):
+		relation = MaterialRelation([
+			Column('name', str), Column('age', int)
+		])
+		projection = GeneralizedProjection(relation, [
+			Attribute(relation.columns[0]),
+			Cast(Attribute(relation.columns[1]), float),
+			Arithmetic('-', Constant(2021), Attribute(relation.columns[1])),
+		])
+		self.assertEqual(len(projection.columns), 3)
+		self.assertEqual(projection.columns[0].name, 'name')
+		self.assertEqual(projection.columns[1].name, 'age')
+		self.assertEqual(projection.columns[2].name, None)
 
 	def test_should_generate_output(self):
 		relation = MaterialRelation([
@@ -836,6 +849,24 @@ class TestSort(unittest.TestCase):
 		ordered = Sort(relation)
 		self.assertEqual(list(ordered), [(13,), (25,), (35,), (None,)])
 
+	def test_should_have_same_columns_as_input(self):
+		relation = Sort(MaterialRelation([
+			Column('name', str, nullable=False),
+			Column('age', int, nullable=True)
+		], name='Users'))
+
+		self.assertEqual(len(relation.columns), 2)
+		self.assertEqual(relation.columns[0].name, 'name')
+		self.assertEqual(relation.columns[0].type, str)
+		self.assertEqual(relation.columns[0].nullable, False)
+		self.assertEqual(relation.columns[0].index, 0)
+		self.assertEqual(relation.columns[1].name, 'age')
+		self.assertEqual(relation.columns[1].type, int)
+		self.assertEqual(relation.columns[1].nullable, True)
+		self.assertEqual(relation.columns[1].index, 1)
+
+		self.assertIsNone(relation.name)
+
 class TestUnion(unittest.TestCase):
 	def test_should_return_error_for_varying_tuple_length(self):
 		lhs = MaterialRelation([Column('a', str), Column('b', int)])
@@ -977,8 +1008,27 @@ class TestDifference(unittest.TestCase):
 # COUNT(expr) - number of rows expression is not null
 
 class TestGroupBy(unittest.TestCase):
-	pass
-	# TODO: names of columns, type, nullability
+	def test_should_have_correct_schema(self):
+		relation = MaterialRelation([Column('a', str, nullable=True),
+				Column('b', bool, nullable=False),
+				Column('c', int)])
+		output = GroupBy(relation, relation.columns[:2], [CountFactory()])
+
+		self.assertEqual(len(output.columns), 3)
+		self.assertEqual(output.columns[0].name, 'a')
+		self.assertEqual(output.columns[0].type, str)
+		self.assertEqual(output.columns[0].nullable, True)
+		self.assertEqual(output.columns[0].index, 0)
+		self.assertEqual(output.columns[1].name, 'b')
+		self.assertEqual(output.columns[1].type, bool)
+		self.assertEqual(output.columns[1].nullable, False)
+		self.assertEqual(output.columns[1].index, 1)
+		self.assertEqual(output.columns[2].name, None)
+		self.assertEqual(output.columns[2].type, int)
+		self.assertEqual(output.columns[2].nullable, False)
+		self.assertEqual(output.columns[2].index, 2)
+
+	# TODO:
 	# Function, type, nullable?
 	# count, int, false
 	# min, * , true
@@ -1046,6 +1096,39 @@ class TestCrossJoin(unittest.TestCase):
 			(2, 'Bob', 'X', True, 2.71),
 			(3, 'Eve', 'x', False, 3.14),
 			(3, 'Eve', 'X', True, 2.71),
+		])
+
+	def test_should_allow_multiple_columns_with_same_name(self):
+		lhs = MaterialRelation([
+			Column('a', int),
+			Column('b', str)
+		])
+		lhs.insert((1, 'Alice'))
+		lhs.insert((2, 'Bob'))
+		lhs.insert((3, 'Eve'))
+
+		rhs = MaterialRelation([
+			Column('b', str, nullable=True),
+			Column('c', bool, nullable=True),
+		])
+		rhs.insert(('x', False))
+		rhs.insert(('X', True))
+
+		product = CrossJoin(lhs, rhs)
+
+		self.assertEqual(len(product.columns), 4)
+		self.assertEqual(product.columns[0].name, 'a')
+		self.assertEqual(product.columns[1].name, 'b')
+		self.assertEqual(product.columns[2].name, 'b')
+		self.assertEqual(product.columns[3].name, 'c')
+
+		self.assertEqual(list(product), [
+			(1, 'Alice', 'x', False),
+			(1, 'Alice', 'X', True),
+			(2, 'Bob', 'x', False),
+			(2, 'Bob', 'X', True),
+			(3, 'Eve', 'x', False),
+			(3, 'Eve', 'X', True),
 		])
 
 # TODO:
