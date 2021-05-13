@@ -698,18 +698,34 @@ class Db:
 		else:
 			raise TypeError('Unknown AST node type')
 
-if __name__ == '__main__':
-	import readline
+class InputCompletion:
+	def __init__(self, db):
+		self.db = db
+		self.vocabulary = None
+		self.refresh_vocabulary()
+		import readline
+		readline.set_completer(self)
+		readline.parse_and_bind('tab: complete')
 
-	def complete_keyword(text, state):
-		results = [s for s in keywords.keys() if s.startswith(text)] + [None]
+	def refresh_vocabulary(self):
+		self.vocabulary = list(keywords.keys())
+		for table_name, table in self.db.catalog.items():
+			if len(table_name) > 2:
+				self.vocabulary.append(table_name)
+			for column in table.columns:
+				if len(column.name) > 2:
+					self.vocabulary.append(column.name)
+
+	def __call__(self, text, state):
+		results = [
+			s for s in self.vocabulary if s.startswith(text)] + [None]
 		return results[state]
 
-	readline.set_completer(complete_keyword)
-	readline.parse_and_bind('tab: complete')
-
+if __name__ == '__main__':
 	db = Db()
+	input_completion = InputCompletion(db)
 	while True:
+		input_completion.refresh_vocabulary()
 		line = input('$ ')
 		print(line)
 		try:
