@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import lex
 import yacc
 import relation
@@ -697,4 +699,26 @@ class Db:
 			raise TypeError('Unknown AST node type')
 
 if __name__ == '__main__':
-	pass
+	import readline
+
+	def complete_keyword(text, state):
+		results = [s for s in keywords.keys() if s.startswith(text)] + [None]
+		return results[state]
+
+	readline.set_completer(complete_keyword)
+	readline.parse_and_bind('tab: complete')
+
+	db = Db()
+	while True:
+		line = input('$ ')
+		print(line)
+		try:
+			result = db.execute(line)
+		except Exception as e:
+			print('error:', e)
+			continue
+		if not result:
+			print('Success!')
+			continue
+		for row in result:
+			print(row)
