@@ -654,6 +654,80 @@ class TestSelect(unittest.TestCase):
 		self.assertEqual(cursor.columns[1].name, 'c')
 		self.assertEqual(cursor.columns[2].name, 'c')
 
+	def test_select_from_query_results(self):
+		db = Db()
+		db.execute('create table t (category string, price integer);')
+		db.execute('''insert into t values
+			('drinks', 12),
+			('drinks', 45),
+			('fruit', 1),
+			('fruit', 2),
+			('cheese', 20),
+			('cheese', 30);''')
+
+		cursor = db.execute('''select * from
+		(select category, max(price) as m from t group by category)
+		where m > 10;
+		''')
+
+		self.assertEqual(list(cursor), [('cheese', 30), ('drinks', 45)])
+
+	def test_select_from_query_results_with_alias(self):
+		db = Db()
+		db.execute('create table t (category string, price integer);')
+		db.execute('''insert into t values
+			('drinks', 12),
+			('drinks', 45),
+			('fruit', 1),
+			('fruit', 2),
+			('cheese', 20),
+			('cheese', 30);''')
+
+		cursor = db.execute('''select m.m from
+		(select category, max(price) as m from t group by category) as m
+		where m > 10;
+		''')
+
+		self.assertEqual(list(cursor), [(30,), (45,)])
+
+	def test_join_subqueries(self):
+		db = Db()
+		db.execute('create table t (category string, price integer);')
+		db.execute('''insert into t values
+			('drinks', 12),
+			('drinks', 45),
+			('fruit', 1),
+			('fruit', 2),
+			('cheese', 20),
+			('cheese', 30);''')
+
+		cursor = db.execute('''select a.category, a.m - b.m from
+		(select category, max(price) as m from t group by category) as a,
+		(select category, min(price) as m from t group by category) as b
+		where a.category = b.category;
+		''')
+
+		self.assertEqual(list(cursor),
+			[('cheese', 10), ('drinks', 33), ('fruit', 1)])
+
+	def test_subquery_with_union(self):
+		db = Db()
+		db.execute('create table t (category string, price integer);')
+		db.execute('''insert into t values
+			('drinks', 12),
+			('drinks', 45),
+			('fruit', 1),
+			('fruit', 2),
+			('cheese', 20),
+			('cheese', 30);''')
+
+		cursor = db.execute('''select price, count(1) from
+		((select price from t where category = 'drinks') union all
+		 (select price from t where price > 20))
+		group by price;
+		''')
+		self.assertEqual(list(cursor), [(12, 1), (30, 1), (45, 2)])
+
 class TestSetOperations(unittest.TestCase):
 
 	def test_union_removes_duplicates_by_default(self):
@@ -874,6 +948,7 @@ class TestSetOperations(unittest.TestCase):
 	# select all vs select distinct
 	# order by asc, desc, nulls first, last
 	# select without a "FROM" e.g. "select 123;"
+	# TODO: short alias for select e.g. select x + 1 a from b;
 
 # Insert into
 # TODO: use integer literal for floating point column

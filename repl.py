@@ -216,8 +216,8 @@ def p_query_statement_set_op(p):
 	p[0] = SetOperatorNode(op, p[1], p[4], distinct)
 
 def p_select_statement(p):
-	'''select_statement : SELECT select_expression_list FROM table_expressions where_clause group_by_clause'''
-	p[0] = SelectNode(select_expressions=p[2], tables=p[4], where_predicate=p[5], group_by=p[6])
+	'''select_statement : SELECT select_expression_list FROM from_items where_clause group_by_clause'''
+	p[0] = SelectNode(select_expressions=p[2], from_items=p[4], where_predicate=p[5], group_by=p[6])
 
 def p_select_expression_list_base(p):
 	'''select_expression_list : select_expression'''
@@ -233,32 +233,38 @@ def p_select_expression(p):
 						| expression'''
 	p[0] = p[1]
 
-def p_select_expression_with_alias(p):
-	'''select_expression : expression AS IDENTIFIER'''
-	p[0] = NamedExpression(p[1], p[3])
+def p_no_alias(p):
+	'alias : empty'
+	p[0] = None
 
-def p_tables_expressions_base(p):
-	'''table_expressions : table_expression'''
+def p_alias(p):
+	'alias : AS IDENTIFIER'
+	p[0] = p[2]
+
+def p_short_alias(p):
+	'alias : IDENTIFIER'
+	p[0] = p[1]
+
+def p_select_expression_with_alias(p):
+	'select_expression : expression alias'
+	p[0] = NamedExpression(p[1], p[2])
+
+def p_from_items_base(p):
+	'from_items : from_item'
 	p[0] = [p[1]]
 
-def p_tables_expressions(p):
-	'''table_expressions : table_expressions ',' table_expression'''
+def p_from_items(p):
+	'''from_items : from_items ',' from_item'''
 	p[1].append(p[3])
 	p[0] = p[1]
 
-def p_table_expression_name(p):
-	'''table_expression : IDENTIFIER'''
-	p[0] = SelectTableNode(table=p[1], alias=None)
+def p_from_item_table_name(p):
+	'from_item : IDENTIFIER alias'
+	p[0] = FromItem(from_item=TableNode(table_name=p[1]), name=p[2])
 
-def p_table_expression_short_alias(p):
-	'''table_expression : IDENTIFIER IDENTIFIER'''
-	p[0] = SelectTableNode(table=p[1], alias=p[2])
-
-def p_table_expression_alias(p):
-	'''table_expression : IDENTIFIER AS IDENTIFIER'''
-	p[0] = SelectTableNode(table=p[1], alias=p[3])
-
-# TODO: subqueries as tables
+def p_from_item_subquery(p):
+	'''from_item : '(' query_statement ')' alias'''
+	p[0] = FromItem(from_item=p[2], name=p[4])
 
 def p_where_clause_missing(p):
 	'''where_clause : empty'''
@@ -467,7 +473,28 @@ class CastNode(ExpressionNode):
 
 CreateTableNode = namedtuple('CreateTableNode', ['name', 'columns'])
 InsertIntoNode = namedtuple('InsertIntoNode', ['table_name', 'tuples'])
-SelectTableNode = namedtuple('SelectTableNode', ['table', 'alias'])
+
+class FromItem:
+	def __init__(self, from_item, name=None):
+		self.from_item = from_item
+		self.name = name
+
+	def get_name(self):
+		if self.name:
+			return self.name
+		if type(self.from_item) == TableNode:
+			return self.from_item.name
+		return None
+
+	def compile(self, catalog):
+		return self.from_item.compile(catalog)
+
+class TableNode:
+	def __init__(self, table_name):
+		self.name = table_name
+
+	def compile(self, catalog):
+		return catalog[self.name]
 
 class ColumnMappings:
 	'Maps columns from source tables to columns in the output table'
@@ -502,9 +529,9 @@ class ColumnMappings:
 		return self.columns[self.get_column_index(column_ref)][1]
 
 class SelectNode:
-	def __init__(self, select_expressions, tables, where_predicate, group_by):
+	def __init__(self, select_expressions, from_items, where_predicate, group_by):
 		self.select_expressions = select_expressions
-		self.tables = tables
+		self.from_items = from_items
 		self.where_predicate = where_predicate
 		self.group_by = group_by
 
@@ -514,21 +541,22 @@ class SelectNode:
 		source columns to output columns.
 		'''
 		column_mappings = ColumnMappings()
-		table_names = set()
-		for table in self.tables:
-			table_name = table.alias or table.table
-			if table_name in table_names:
-				raise ValueError(
-					'Non-unique table name or alias %r' % table_name)
-			table_names.add(table_name)
-			for column in catalog[table.table].columns:
-				column_mappings.add_column(table_name, column)
+		input_names = set()
+		input_relations = []
+		for from_item in self.from_items:
+			name = from_item.get_name()
+			if name in input_names:
+				raise ValueError('Non-unique table name or alias %r' % name)
+			input_names.add(name)
+			input_relation = from_item.compile(catalog)
+			for column in input_relation.columns:
+				column_mappings.add_column(name, column)
+			input_relations.append(input_relation)
 
 		# Joins
-		output_relation = catalog[self.tables[0].table]
-		for table in self.tables[1:]:
-			output_relation = relation.CrossJoin(
-									output_relation, catalog[table.table])
+		output_relation = input_relations[0]
+		for table in input_relations[1:]:
+			output_relation = relation.CrossJoin(output_relation, table)
 		return output_relation, column_mappings
 
 	def compile_selection(self, input_relation, column_mappings):
