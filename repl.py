@@ -727,7 +727,6 @@ if __name__ == '__main__':
 	while True:
 		input_completion.refresh_vocabulary()
 		line = input('$ ')
-		print(line)
 		try:
 			result = db.execute(line)
 		except Exception as e:
